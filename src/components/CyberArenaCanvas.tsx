@@ -2092,17 +2092,17 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
       <div ref={mountRef} className="w-full h-full touch-none" />
 
       {/* Adaptive GTA San Andreas Circular Radar Mini-Map:
-          - Handphone (<640px): Compact 84x84px in top-right below status bar (keeps bottom-left clear for Virtual Joystick!)
-          - Desktop/Tablet (>=640px): 148x148px in bottom-left */}
+          - Handphone Portrait & Landscape (<1024px): Positioned at top-right below compact status bar (62x62px in landscape, 76x76px in portrait) so it NEVER overlaps the bottom-left Virtual Movement Joystick!
+          - Desktop (>=1024px / lg:, where virtual joystick is hidden): 148x148px in bottom-left */}
       {joinedRoom && (
-        <div className="fixed top-[60px] right-2.5 sm:top-auto sm:right-auto sm:bottom-5 sm:left-5 z-20 pointer-events-none flex flex-col items-center gap-1">
+        <div className="fixed top-[48px] right-2.5 lg:top-auto lg:right-auto lg:bottom-5 lg:left-5 z-20 pointer-events-none flex flex-col items-center gap-1">
           <canvas
             ref={radarCanvasRef}
             width={148}
             height={148}
-            className="block w-[82px] h-[82px] sm:w-[148px] sm:h-[148px] rounded-full shadow-2xl"
+            className="block w-[76px] h-[76px] max-lg:landscape:w-[60px] max-lg:landscape:h-[60px] lg:w-[148px] lg:h-[148px] rounded-full shadow-2xl"
           />
-          <span className="hidden sm:inline-block text-[10px] font-mono text-slate-400 bg-slate-900/90 px-2.5 py-0.5 rounded border border-slate-800">
+          <span className="hidden lg:inline-block text-[10px] font-mono text-slate-400 bg-slate-900/90 px-2.5 py-0.5 rounded border border-slate-800">
             G: Pos Guru · ■: Barang · ●: Siswa
           </span>
         </div>
@@ -2117,26 +2117,26 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
             onTouchMove={handleJoystickMove}
             onTouchEnd={handleJoystickEnd}
             onTouchCancel={handleJoystickEnd}
-            className="fixed bottom-16 left-4 z-20 lg:hidden w-28 h-28 rounded-full bg-slate-900/80 border-2 border-slate-600/90 shadow-2xl flex items-center justify-center touch-none select-none"
+            className="fixed bottom-14 left-3.5 max-lg:landscape:bottom-10 max-lg:landscape:left-3 z-20 lg:hidden w-24 h-24 max-lg:landscape:w-[84px] max-lg:landscape:h-[84px] rounded-full bg-slate-900/80 border-2 border-slate-600/90 shadow-2xl flex items-center justify-center touch-none select-none"
             aria-label="Joystick Virtual Jalan 3D"
           >
-            <div className="w-20 h-20 rounded-full border border-slate-700/70 flex items-center justify-center pointer-events-none">
+            <div className="w-16 h-16 max-lg:landscape:w-14 max-lg:landscape:h-14 rounded-full border border-slate-700/70 flex items-center justify-center pointer-events-none">
               <span className="text-[9px] font-mono font-bold text-slate-500 uppercase">
                 JALAN
               </span>
             </div>
             <div
-              className="absolute w-12 h-12 rounded-full bg-emerald-500/90 border-2 border-white shadow-lg pointer-events-none flex items-center justify-center"
+              className="absolute w-11 h-11 max-lg:landscape:w-10 max-lg:landscape:h-10 rounded-full bg-emerald-500/90 border-2 border-white shadow-lg pointer-events-none flex items-center justify-center"
               style={{
                 transform: `translate(${joystickKnob.x}px, ${joystickKnob.y}px)`,
               }}
             >
-              <div className="w-3 h-3 rounded-full bg-white/90" />
+              <div className="w-2.5 h-2.5 rounded-full bg-white/90" />
             </div>
           </div>
 
           {/* Right Thumb Jump & Dash Action Button */}
-          <div className="fixed bottom-20 right-4 z-20 lg:hidden flex flex-col items-center gap-2">
+          <div className="fixed bottom-16 right-3.5 max-lg:landscape:bottom-11 max-lg:landscape:right-3 z-20 lg:hidden flex flex-col items-center gap-2">
             <button
               type="button"
               onTouchStart={(e) => {
@@ -2146,10 +2146,10 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
               onClick={() => {
                 mobileJumpQueuedRef.current = true;
               }}
-              className="w-16 h-16 rounded-full bg-sky-600/90 active:bg-sky-400 border-2 border-sky-300 shadow-2xl flex flex-col items-center justify-center text-white font-extrabold text-[10px] font-mono leading-tight touch-none select-none"
+              className="w-15 h-15 max-lg:landscape:w-13 max-lg:landscape:h-13 rounded-full bg-sky-600/90 active:bg-sky-400 border-2 border-sky-300 shadow-2xl flex flex-col items-center justify-center text-white font-extrabold text-[10px] max-lg:landscape:text-[9px] font-mono leading-tight touch-none select-none"
             >
               <span>LOMPAT</span>
-              <span className="text-[9px] text-sky-200">DASH</span>
+              <span className="text-[8px] text-sky-200">DASH</span>
             </button>
           </div>
         </>

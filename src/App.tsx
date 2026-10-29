@@ -2324,8 +2324,8 @@ export default function App() {
             </div>
           )}
 
-          {/* 3A. COMPACT MOBILE TOP HUD BAR (Handphone <768px) */}
-          <div className="fixed top-2 left-2 right-2 z-20 md:hidden pointer-events-none flex flex-col gap-1.5">
+          {/* 3A. COMPACT MOBILE TOP HUD BAR (Handphone Portrait & Landscape <1024px) */}
+          <div className="fixed top-2 left-2 right-2 z-20 lg:hidden pointer-events-none flex flex-col gap-1.5">
             <div className="bg-slate-900/95 border border-slate-700/90 rounded-xl px-2 py-1.5 shadow-xl pointer-events-auto flex items-center justify-between gap-1">
               {/* Left: Room PIN, Online Students Drawer Toggle, & Chat Button */}
               <div className="flex items-center gap-1 min-w-0">
@@ -2428,8 +2428,8 @@ export default function App() {
             )}
           </div>
 
-          {/* 3B. DESKTOP / TABLET TOP-LEFT & TOP-RIGHT HUD (Hidden on Handphone <768px) */}
-          <div className="hidden md:block fixed top-4 left-4 z-20 max-w-md pointer-events-none">
+          {/* 3B. DESKTOP TOP-LEFT & TOP-RIGHT HUD (Hidden on Handphone Portrait & Landscape <1024px) */}
+          <div className="hidden lg:block fixed top-4 left-4 z-20 max-w-md pointer-events-none">
             <div className="bg-slate-900/95 border border-slate-700/90 rounded-2xl px-4 py-3 shadow-2xl pointer-events-auto space-y-2">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
@@ -2519,7 +2519,7 @@ export default function App() {
             </div>
           </div>
 
-          <div className="hidden md:block fixed top-4 right-4 z-20 pointer-events-none">
+          <div className="hidden lg:block fixed top-4 right-4 z-20 pointer-events-none">
             <div className="bg-slate-900/95 border-2 border-slate-700 rounded-2xl px-5 py-3 shadow-2xl text-right space-y-1 font-mono tabular-nums pointer-events-auto">
               <div className="flex items-center justify-end gap-2">
                 <span className="px-2 py-0.5 rounded bg-emerald-950 border border-emerald-700 text-[10px] font-bold text-emerald-300">
@@ -2549,7 +2549,7 @@ export default function App() {
 
           {/* 3C. ROBLOX-STYLE OPEN-WORLD REAL-TIME CHAT WINDOW (Collapsible, works on Handphone & Desktop) */}
           {isChatOpen && (
-            <div className="fixed top-14 md:top-40 left-2 md:left-4 z-30 w-[92vw] max-w-sm bg-slate-900/95 border-2 border-sky-500/80 rounded-2xl shadow-2xl pointer-events-auto flex flex-col overflow-hidden">
+            <div className="fixed top-13 lg:top-40 left-2 lg:left-4 z-30 w-[92vw] max-w-sm bg-slate-900/95 border-2 border-sky-500/80 rounded-2xl shadow-2xl pointer-events-auto flex flex-col overflow-hidden">
               <div className="flex items-center justify-between px-3.5 py-2 bg-slate-950 border-b border-slate-800">
                 <div className="flex items-center gap-2">
                   <MessageSquare className="w-4 h-4 text-sky-400" />
@@ -2656,16 +2656,16 @@ export default function App() {
             </div>
           )}
 
-          {/* Proximity Action Prompts */}
-          <div className="fixed bottom-44 sm:bottom-24 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-2 w-[92vw] max-w-lg px-2 pointer-events-none">
+          {/* Proximity Action Prompts (Centered between Joystick & Jump on Landscape HP) */}
+          <div className="fixed bottom-42 max-lg:landscape:bottom-12 lg:bottom-24 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-1.5 w-[90vw] max-lg:landscape:w-[calc(100vw-220px)] max-w-lg px-2 pointer-events-none">
             {nearbyTeacherPost && (
-              <div className="w-full p-2.5 sm:p-4 bg-slate-900/95 border-2 border-amber-400 rounded-xl sm:rounded-2xl shadow-2xl flex items-center justify-between gap-2.5 pointer-events-auto">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="p-2 rounded-lg bg-amber-500/20 text-amber-300 shrink-0">
-                    <GraduationCap className="w-5 h-5" />
+              <div className="w-full p-2 sm:p-3.5 max-lg:landscape:py-1.5 max-lg:landscape:px-2.5 bg-slate-900/95 border-2 border-amber-400 rounded-xl sm:rounded-2xl shadow-2xl flex items-center justify-between gap-2 pointer-events-auto">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="p-1.5 sm:p-2 rounded-lg bg-amber-500/20 text-amber-300 shrink-0">
+                    <GraduationCap className="w-4 h-4 sm:w-5 sm:h-5" />
                   </div>
                   <div className="min-w-0">
-                    <div className="text-[10px] font-mono font-bold text-amber-400 uppercase truncate">
+                    <div className="text-[9px] sm:text-[10px] font-mono font-bold text-amber-400 uppercase truncate">
                       {nearbyTeacherPost.buildingName}
                     </div>
                     <div className="text-xs sm:text-sm font-extrabold text-slate-100 truncate">
@@ -2679,7 +2679,7 @@ export default function App() {
                     soundEngine.playDash();
                     setActiveTeacherModalIndex(nearbyTeacherPost.index);
                   }}
-                  className="px-3 sm:px-4 py-2 text-[11px] sm:text-xs font-extrabold text-slate-950 bg-amber-400 hover:bg-amber-300 rounded-lg sm:rounded-xl shadow-lg transition-colors whitespace-nowrap shrink-0"
+                  className="px-2.5 sm:px-4 py-1.5 sm:py-2 text-[11px] sm:text-xs font-extrabold text-slate-950 bg-amber-400 hover:bg-amber-300 rounded-lg sm:rounded-xl shadow-lg transition-colors whitespace-nowrap shrink-0"
                 >
                   Jawab Soal [F]
                 </button>
@@ -2687,13 +2687,13 @@ export default function App() {
             )}
 
             {nearbyVersusTarget && (
-              <div className="w-full p-2.5 sm:p-4 bg-slate-900/95 border-2 border-rose-500 rounded-xl sm:rounded-2xl shadow-2xl flex items-center justify-between gap-2.5 pointer-events-auto">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="p-2 rounded-lg bg-rose-500/20 text-rose-300 shrink-0">
-                    <Swords className="w-5 h-5" />
+              <div className="w-full p-2 sm:p-3.5 max-lg:landscape:py-1.5 max-lg:landscape:px-2.5 bg-slate-900/95 border-2 border-rose-500 rounded-xl sm:rounded-2xl shadow-2xl flex items-center justify-between gap-2 pointer-events-auto">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="p-1.5 sm:p-2 rounded-lg bg-rose-500/20 text-rose-300 shrink-0">
+                    <Swords className="w-4 h-4 sm:w-5 sm:h-5" />
                   </div>
                   <div className="min-w-0">
-                    <div className="text-[10px] font-mono font-bold text-rose-400 uppercase truncate">
+                    <div className="text-[9px] sm:text-[10px] font-mono font-bold text-rose-400 uppercase truncate">
                       {nearbyVersusTarget.isRoamingPeer
                         ? 'BOT LATIHAN · DUEL 1V1'
                         : 'TEMAN SEKELAS · UNDANG DUEL PERSETUJUAN 1V1'}
@@ -2706,7 +2706,7 @@ export default function App() {
 
                 <button
                   onClick={() => handleSendVersusInvite(nearbyVersusTarget)}
-                  className="px-3 sm:px-4 py-2 text-[11px] sm:text-xs font-extrabold text-white bg-rose-600 hover:bg-rose-500 rounded-lg sm:rounded-xl shadow-lg transition-colors whitespace-nowrap shrink-0"
+                  className="px-2.5 sm:px-4 py-1.5 sm:py-2 text-[11px] sm:text-xs font-extrabold text-white bg-rose-600 hover:bg-rose-500 rounded-lg sm:rounded-xl shadow-lg transition-colors whitespace-nowrap shrink-0"
                 >
                   Ajak Duel [V]
                 </button>
@@ -2714,8 +2714,8 @@ export default function App() {
             )}
           </div>
 
-          {/* Unified Collapsible Bottom Control Dock */}
-          <div className="fixed bottom-1.5 sm:bottom-4 left-1/2 -translate-x-1/2 z-20 w-[96vw] sm:w-full max-w-[min(860px,94vw)] pointer-events-none flex flex-col items-center">
+          {/* Unified Collapsible Bottom Control Dock (Constrained on Landscape HP so it never touches Joystick/Jump) */}
+          <div className="fixed bottom-1 lg:bottom-4 left-1/2 -translate-x-1/2 z-20 w-[96vw] max-lg:landscape:w-[calc(100vw-220px)] lg:w-full max-w-[min(860px,94vw)] pointer-events-none flex flex-col items-center">
             <button
               onClick={() => setIsDockCollapsed((prev) => !prev)}
               className="pointer-events-auto flex items-center gap-1 px-3 py-0.5 sm:py-1 text-[10px] sm:text-[11px] font-semibold text-slate-300 bg-slate-900/95 hover:bg-slate-800 border border-b-0 border-slate-700 rounded-t-lg sm:rounded-t-xl transition-colors whitespace-nowrap shrink-0"
