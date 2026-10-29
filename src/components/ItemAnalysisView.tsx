@@ -124,46 +124,46 @@ export const ItemAnalysisView: React.FC<ItemAnalysisViewProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/92 p-4 md:p-6 overflow-y-auto">
-      <div className="w-full max-w-6xl max-h-[92vh] flex flex-col bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden">
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/92 p-2 sm:p-4 md:p-6 overflow-y-auto overscroll-contain touch-pan-y">
+      <div className="w-full max-w-6xl max-h-[94dvh] flex flex-col bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden my-auto">
         {/* Top Victory & Teacher Identity Header */}
-        <div className="flex flex-wrap items-center justify-between gap-4 px-6 py-4 bg-slate-950 border-b border-slate-800">
-          <div>
-            <div className="text-xs text-sky-400 font-medium">
+        <div className="shrink-0 flex flex-wrap items-center justify-between gap-2.5 sm:gap-4 px-3.5 sm:px-6 py-3 sm:py-4 bg-slate-950 border-b border-slate-800">
+          <div className="min-w-0">
+            <div className="text-[11px] sm:text-xs text-sky-400 font-medium truncate">
               Laporan Evaluasi Satu Kelas (Kode Room: {roomPin || 'MTN14'}) · MTs Negeri 14 Jakarta
             </div>
-            <h2 className="text-xl md:text-2xl font-bold text-slate-100 font-display mt-0.5">
+            <h2 className="text-base sm:text-xl md:text-2xl font-bold text-slate-100 font-display mt-0.5 truncate">
               Peringkat Kelas & Analisis Psikometrik Butir Soal Informatika
             </h2>
-            <p className="text-xs text-slate-400 mt-0.5">
+            <p className="text-[11px] sm:text-xs text-slate-400 mt-0.5 hidden sm:block">
               Guru Pengampu: Azhary Mardhani, S.Kom · Kurikulum Merdeka
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2.5">
+          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2.5">
             <button
               onClick={handleDownloadCsv}
-              className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-200 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg transition-colors whitespace-nowrap shrink-0"
+              className="flex items-center gap-1.5 px-2.5 sm:px-3.5 py-1.5 sm:py-2 text-[11px] sm:text-xs font-semibold text-slate-200 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg transition-colors whitespace-nowrap shrink-0"
             >
               <Download className="w-3.5 h-3.5 text-sky-400" />
               Unduh CSV Analisis
             </button>
             <button
               onClick={onOpenMaterialManager}
-              className="px-3.5 py-2 text-xs font-semibold text-slate-200 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg transition-colors whitespace-nowrap shrink-0"
+              className="px-2.5 sm:px-3.5 py-1.5 sm:py-2 text-[11px] sm:text-xs font-semibold text-slate-200 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg transition-colors whitespace-nowrap shrink-0"
             >
               Tambah Materi / Soal
             </button>
             <button
               onClick={onBackToMapLobby}
-              className="px-3.5 py-2 text-xs font-semibold text-slate-300 bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors whitespace-nowrap shrink-0"
+              className="px-2.5 sm:px-3.5 py-1.5 sm:py-2 text-[11px] sm:text-xs font-semibold text-slate-300 bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors whitespace-nowrap shrink-0"
             >
               Kembali ke Map Kelas
             </button>
             {isTeacherHost && (
               <button
                 onClick={onPlayAgain}
-                className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-sky-600 hover:bg-sky-500 rounded-lg transition-colors whitespace-nowrap shrink-0"
+                className="flex items-center gap-1.5 px-3 sm:px-4 py-1.5 sm:py-2 text-[11px] sm:text-xs font-bold text-white bg-sky-600 hover:bg-sky-500 rounded-lg transition-colors whitespace-nowrap shrink-0"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
                 Mulai Ulang Sesi Kelas
@@ -173,7 +173,7 @@ export const ItemAnalysisView: React.FC<ItemAnalysisViewProps> = ({
         </div>
 
         {/* Scrollable Report Body */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain touch-pan-y p-3.5 sm:p-6 space-y-5 sm:space-y-6">
           {/* Class Leaderboard & Psychometric Summary Row */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
             {/* Classroom Leaderboard Card */}

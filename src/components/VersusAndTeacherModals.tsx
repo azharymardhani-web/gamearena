@@ -155,29 +155,30 @@ export const VersusDuelModal: React.FC<VersusDuelModalProps> = ({
   const rewardScore = wonDuel ? 150 : 60;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 p-3 sm:p-4">
-      <div className="w-full max-w-xl bg-slate-900 border-2 border-slate-700 rounded-2xl shadow-2xl overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 p-2.5 sm:p-4 overflow-y-auto overscroll-contain touch-pan-y">
+      <div className="w-full max-w-xl max-h-[92dvh] flex flex-col bg-slate-900 border-2 border-slate-700 rounded-2xl shadow-2xl overflow-hidden my-auto">
         {/* Versus Header */}
-        <div className="flex items-center justify-between px-4 sm:px-6 py-3.5 bg-slate-950 border-b border-slate-800">
-          <div className="flex items-center gap-2.5">
+        <div className="shrink-0 flex items-center justify-between px-4 sm:px-6 py-3 bg-slate-950 border-b border-slate-800">
+          <div className="flex items-center gap-2.5 min-w-0">
             <Swords className="w-5 h-5 text-rose-400 shrink-0" />
-            <div>
-              <h2 className="text-sm sm:text-lg font-extrabold text-slate-100 font-display">
+            <div className="min-w-0">
+              <h2 className="text-sm sm:text-lg font-extrabold text-slate-100 font-display truncate">
                 DUEL VERSUS REAL-TIME (1v1) · MTsN 14 HALIM
               </h2>
-              <p className="text-[11px] text-slate-400">
+              <p className="text-[11px] text-slate-400 truncate">
                 Persetujuan kedua belah pihak · Soal & skor tersinkronisasi secara realtime
               </p>
             </div>
           </div>
           <button
             onClick={() => onCloseMatch(activeMatch.id)}
-            className="p-1.5 text-slate-400 hover:text-slate-200 bg-slate-800 rounded-lg"
+            className="p-1.5 text-slate-400 hover:text-slate-200 bg-slate-800 rounded-lg shrink-0"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain touch-pan-y">
         {/* STATE 1: PENDING MUTUAL CONSENT */}
         {activeMatch.status === 'PENDING_CONSENT' && (
           <div className="p-6 text-center space-y-4">
@@ -379,6 +380,7 @@ export const VersusDuelModal: React.FC<VersusDuelModalProps> = ({
             </div>
           </>
         )}
+        </div>
       </div>
     </div>
   );
@@ -503,88 +505,90 @@ export const TeacherQuestModal: React.FC<TeacherQuestModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 p-4">
-      <div className="w-full max-w-4xl max-h-[90vh] flex flex-col bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 p-2 sm:p-4 overflow-y-auto overscroll-contain touch-pan-y">
+      <div className="w-full max-w-4xl max-h-[92dvh] flex flex-col bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden my-auto">
         {/* Header: Pos Misi Guru Azhary Mardhani, S.Kom */}
-        <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4 bg-slate-950 border-b border-slate-800">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-amber-500/15 border border-amber-500/40 text-amber-400">
-              <GraduationCap className="w-6 h-6" />
+        <div className="shrink-0 flex flex-wrap items-center justify-between gap-2 sm:gap-3 px-3.5 sm:px-6 py-2.5 sm:py-4 bg-slate-950 border-b border-slate-800">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+            <div className="p-2 sm:p-2.5 rounded-xl bg-amber-500/15 border border-amber-500/40 text-amber-400 shrink-0">
+              <GraduationCap className="w-5 h-5 sm:w-6 sm:h-6" />
             </div>
-            <div>
-              <div className="text-xs font-semibold text-amber-400">
+            <div className="min-w-0">
+              <div className="text-[10px] sm:text-xs font-semibold text-amber-400 truncate">
                 POS MISI GURU INFORMATIKA · MTs NEGERI 14 JAKARTA
               </div>
-              <h2 className="text-lg md:text-xl font-extrabold text-slate-100 font-display">
+              <h2 className="text-sm sm:text-lg md:text-xl font-extrabold text-slate-100 font-display truncate">
                 Azhary Mardhani, S.Kom — Pengujian Misi & Evaluasi Soal
               </h2>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            <div className="px-3.5 py-1.5 bg-slate-900 border border-slate-700 rounded-xl text-xs font-mono tabular-nums">
-              <span className="text-slate-400">Poin Misi (MP): </span>
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0 ml-auto">
+            <div className="px-2.5 sm:px-3.5 py-1 sm:py-1.5 bg-slate-900 border border-slate-700 rounded-xl text-[11px] sm:text-xs font-mono tabular-nums">
+              <span className="text-slate-400 hidden sm:inline">Poin Misi (MP): </span>
               <strong className="text-emerald-400">{missionPoints} MP</strong>
             </div>
-            <div className="px-3.5 py-1.5 bg-slate-900 border border-slate-700 rounded-xl text-xs font-mono tabular-nums">
-              <span className="text-slate-400">Progres Misi: </span>
+            <div className="px-2.5 sm:px-3.5 py-1 sm:py-1.5 bg-slate-900 border border-slate-700 rounded-xl text-[11px] sm:text-xs font-mono tabular-nums">
+              <span className="text-slate-400 hidden sm:inline">Progres Misi: </span>
               <strong className="text-sky-400">
                 {answeredQuestionIds.size}/{questions.length} Soal
               </strong>
             </div>
             <button
               onClick={onClose}
-              className="p-2 text-slate-400 hover:text-slate-200 bg-slate-800 rounded-lg"
+              className="p-1.5 sm:p-2 text-slate-400 hover:text-slate-200 bg-slate-800 rounded-lg"
             >
               <X className="w-4 h-4" />
             </button>
           </div>
         </div>
 
-        {/* Content Split: Left Question Selector List + Right Active Question & Material */}
-        <div className="flex-1 overflow-y-auto grid grid-cols-1 lg:grid-cols-12 divide-y lg:divide-y-0 lg:divide-x divide-slate-800">
-          {/* Left Column: All Mission Questions */}
-          <div className="lg:col-span-4 p-4 bg-slate-950/50 space-y-2 overflow-y-auto max-h-[65vh]">
-            <div className="text-xs font-bold text-slate-400 px-1 pb-1">
+        {/* Content Split: Single unified vertical scroll on Handphone (<1024px), 2-column split on Desktop (lg:) */}
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain touch-pan-y lg:overflow-hidden lg:grid lg:grid-cols-12 divide-y lg:divide-y-0 lg:divide-x divide-slate-800">
+          {/* Left Column: All Mission Questions (Horizontal strip on HP so it doesn't block vertical scroll, vertical list on Desktop) */}
+          <div className="lg:col-span-4 p-3 sm:p-4 bg-slate-950/50 space-y-2 lg:overflow-y-auto lg:max-h-[75dvh]">
+            <div className="text-[11px] sm:text-xs font-bold text-slate-400 px-1">
               DAFTAR SOAL MISI ({answeredQuestionIds.size}/{questions.length} TUNTAS)
             </div>
-            {questions.map((q, idx) => {
-              const done = answeredQuestionIds.has(q.id);
-              const isCurrent = q.id === activeQ.id;
-              return (
-                <button
-                  key={q.id}
-                  onClick={() => {
-                    setSelectedQId(q.id);
-                    setQuestionStartMs(performance.now());
-                    setLastResult(null);
-                  }}
-                  className={`w-full text-left px-3.5 py-2.5 rounded-xl border text-xs transition-colors flex items-center justify-between gap-2 ${
-                    isCurrent
-                      ? 'bg-sky-950/60 border-sky-500 text-slate-100'
-                      : done
-                      ? 'bg-emerald-950/25 border-emerald-800/50 text-emerald-300'
-                      : 'bg-slate-900/80 border-slate-800 text-slate-300 hover:bg-slate-800'
-                  }`}
-                >
-                  <div className="truncate">
-                    <span className="font-mono font-bold mr-1.5">#{idx + 1}</span>
-                    <span>{q.category}</span>
-                  </div>
-                  {done ? (
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                  ) : (
-                    <span className="text-[10px] font-mono text-amber-400 shrink-0">
-                      {QUESTION_MP_COST} MP
-                    </span>
-                  )}
-                </button>
-              );
-            })}
+            <div className="flex lg:flex-col gap-2 overflow-x-auto lg:overflow-x-visible pb-1 lg:pb-0">
+              {questions.map((q, idx) => {
+                const done = answeredQuestionIds.has(q.id);
+                const isCurrent = q.id === activeQ.id;
+                return (
+                  <button
+                    key={q.id}
+                    onClick={() => {
+                      setSelectedQId(q.id);
+                      setQuestionStartMs(performance.now());
+                      setLastResult(null);
+                    }}
+                    className={`shrink-0 lg:w-full text-left px-3 py-2 sm:px-3.5 sm:py-2.5 rounded-xl border text-xs transition-colors flex items-center justify-between gap-2 ${
+                      isCurrent
+                        ? 'bg-sky-950/60 border-sky-500 text-slate-100'
+                        : done
+                        ? 'bg-emerald-950/25 border-emerald-800/50 text-emerald-300'
+                        : 'bg-slate-900/80 border-slate-800 text-slate-300 hover:bg-slate-800'
+                    }`}
+                  >
+                    <div className="truncate max-w-[140px] lg:max-w-none">
+                      <span className="font-mono font-bold mr-1.5">#{idx + 1}</span>
+                      <span>{q.category}</span>
+                    </div>
+                    {done ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    ) : (
+                      <span className="text-[10px] font-mono text-amber-400 shrink-0">
+                        {QUESTION_MP_COST} MP
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {/* Right Column: Active Question & Material Briefing */}
-          <div className="lg:col-span-8 p-6 space-y-5 overflow-y-auto">
+          <div className="lg:col-span-8 p-3.5 sm:p-6 space-y-4 sm:space-y-5 lg:overflow-y-auto lg:max-h-[75dvh]">
             {/* Toggle Material Briefing */}
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="text-xs text-slate-400">

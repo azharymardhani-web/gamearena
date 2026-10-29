@@ -7,17 +7,34 @@
 }
 
 @layer base {
+  html,
   body {
     font-family: var(--font-sans);
     background-color: #020617;
     color: #f8fafc;
     overflow: hidden;
+    height: 100%;
+    width: 100%;
     user-select: none;
+    -webkit-user-select: none;
   }
 
   h1, h2, h3, .font-display {
     font-family: var(--font-display);
   }
+}
+
+/* Ensure all scrollable containers work smoothly with finger swipe on Handphone (iOS & Android) */
+.overflow-y-auto {
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  overscroll-behavior-y: contain;
+}
+
+.overflow-x-auto {
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x;
+  overscroll-behavior-x: contain;
 }
 
 .tabular-nums {

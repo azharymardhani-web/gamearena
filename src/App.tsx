@@ -1811,7 +1811,7 @@ export default function App() {
   );
 
   return (
-    <div className="relative w-screen h-screen overflow-hidden select-none bg-slate-950">
+    <div className="relative w-screen h-[100dvh] overflow-hidden select-none bg-slate-950">
       {/* 1. 3D Kampus MTs Negeri 14 Jakarta Timur (Halim Perdanakusuma) Open-World Canvas */}
       <CyberArenaCanvas
         joinedRoom={joinedRoom}
@@ -1839,7 +1839,8 @@ export default function App() {
           2. PORTAL MASUK KAMPUS MTsN 14 HALIM & PEMILIHAN KARAKTER 3D
          ==================================================================== */}
       {!joinedRoom && (
-        <div className="fixed inset-0 z-20 flex flex-col justify-between p-2.5 sm:p-4 md:p-7 pointer-events-none overflow-y-auto">
+        <div className="fixed inset-0 z-20 overflow-y-auto overscroll-contain touch-pan-y pointer-events-auto">
+          <div className="min-h-full flex flex-col justify-between gap-3 p-2.5 sm:p-4 md:p-7 pb-10">
           {/* Top Bar: School Identity & Teacher Tools */}
           <div className="flex flex-wrap items-center justify-between gap-2 pointer-events-auto">
             <div className="text-[10px] sm:text-xs text-slate-200 font-semibold bg-slate-900/95 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-lg border border-slate-700 truncate max-w-full">
@@ -2176,10 +2177,10 @@ export default function App() {
 
                   <button
                     type="submit"
-                    className="w-full flex items-center justify-center gap-2 py-3 px-6 text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-500 rounded-xl shadow-lg transition-colors whitespace-nowrap shrink-0"
+                    className="w-full flex items-center justify-center gap-2 py-3 px-4 sm:px-6 text-xs sm:text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-500 rounded-xl shadow-lg transition-colors"
                   >
-                    <Play className="w-4 h-4 fill-current" />
-                    Masuk ke Open-World 3D MTsN 14 Halim ({roomCodeInput || 'MTN14'})
+                    <Play className="w-4 h-4 fill-current shrink-0" />
+                    <span>Masuk ke Open-World 3D MTsN 14 Halim ({roomCodeInput || 'MTN14'})</span>
                   </button>
                 </form>
               ) : (
@@ -2242,18 +2243,19 @@ export default function App() {
 
                   <button
                     type="submit"
-                    className="w-full flex items-center justify-center gap-2 py-3.5 px-6 text-sm font-bold text-white bg-amber-600 hover:bg-amber-500 rounded-xl shadow-lg transition-colors whitespace-nowrap shrink-0"
+                    className="w-full flex items-center justify-center gap-2 py-3.5 px-4 sm:px-6 text-xs sm:text-sm font-bold text-white bg-amber-600 hover:bg-amber-500 rounded-xl shadow-lg transition-colors"
                   >
-                    <ShieldCheck className="w-4 h-4" />
-                    Buka Kampus 3D MTsN 14 Halim & Pantau Siswa ({teacherRoomCode || 'MTN14'})
+                    <ShieldCheck className="w-4 h-4 shrink-0" />
+                    <span>Buka Kampus 3D MTsN 14 Halim & Pantau Siswa ({teacherRoomCode || 'MTN14'})</span>
                   </button>
                 </form>
               )}
             </div>
           </div>
 
-          <div className="text-center text-xs font-mono text-slate-300 pointer-events-none">
+          <div className="text-center text-xs font-mono text-slate-300 pointer-events-none pt-1">
             Open-World Roblox 3D · Chat Bubble Realtime · Duel Versus Persetujuan 2 Pihak
+          </div>
           </div>
         </div>
       )}

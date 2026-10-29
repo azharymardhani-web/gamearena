@@ -167,33 +167,33 @@ export const MaterialManagerModal: React.FC<MaterialManagerModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 p-4 md:p-6">
-      <div className="relative flex flex-col w-full max-w-5xl max-h-[90vh] bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 p-2 sm:p-4 md:p-6 overflow-y-auto overscroll-contain touch-pan-y">
+      <div className="relative flex flex-col w-full max-w-5xl max-h-[94dvh] bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden my-auto">
         {/* Modal Header */}
-        <div className="flex items-center justify-between gap-4 px-6 py-4 border-b border-slate-800 bg-slate-950/60">
-          <div>
-            <h2 className="text-xl font-bold text-slate-100 font-display">
+        <div className="shrink-0 flex items-center justify-between gap-3 px-3.5 sm:px-6 py-3 sm:py-4 border-b border-slate-800 bg-slate-950/60">
+          <div className="min-w-0">
+            <h2 className="text-base sm:text-xl font-bold text-slate-100 font-display truncate">
               Bank Materi & Butir Soal Informatika
             </h2>
-            <p className="text-xs text-slate-400 mt-0.5">
+            <p className="text-[11px] sm:text-xs text-slate-400 mt-0.5 truncate">
               Pengampu: Azhary Mardhani, S.Kom · MTs Negeri 14 Jakarta · Kurikulum Merdeka
             </p>
           </div>
           <button
             onClick={onClose}
-            className="flex items-center gap-2 px-3 py-2 text-xs font-medium text-slate-300 bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors whitespace-nowrap shrink-0"
+            className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs font-medium text-slate-300 bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors whitespace-nowrap shrink-0"
           >
             <X className="w-4 h-4" />
-            Tutup Panel
+            <span>Tutup</span>
           </button>
         </div>
 
         {/* Interactive Segmented Control Bar */}
-        <div className="flex flex-wrap items-center justify-between gap-4 px-6 py-3 border-b border-slate-800 bg-slate-900">
-          <div className="flex items-center gap-1 p-1 bg-slate-950 rounded-lg border border-slate-800">
+        <div className="shrink-0 flex flex-wrap items-center justify-between gap-2 px-3.5 sm:px-6 py-2.5 border-b border-slate-800 bg-slate-900">
+          <div className="flex items-center gap-1 p-1 bg-slate-950 rounded-lg border border-slate-800 overflow-x-auto max-w-full">
             <button
               onClick={() => setActiveTab('MATERI')}
-              className={`px-3.5 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
                 activeTab === 'MATERI'
                   ? 'bg-sky-600 text-white'
                   : 'text-slate-400 hover:text-slate-200'
@@ -203,7 +203,7 @@ export const MaterialManagerModal: React.FC<MaterialManagerModalProps> = ({
             </button>
             <button
               onClick={() => setActiveTab('SOAL')}
-              className={`px-3.5 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
                 activeTab === 'SOAL'
                   ? 'bg-sky-600 text-white'
                   : 'text-slate-400 hover:text-slate-200'
@@ -213,7 +213,7 @@ export const MaterialManagerModal: React.FC<MaterialManagerModalProps> = ({
             </button>
             <button
               onClick={() => setActiveTab('TAMBAH_MATERI')}
-              className={`flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
                 activeTab === 'TAMBAH_MATERI'
                   ? 'bg-emerald-600 text-white'
                   : 'text-slate-400 hover:text-slate-200'
@@ -224,7 +224,7 @@ export const MaterialManagerModal: React.FC<MaterialManagerModalProps> = ({
             </button>
             <button
               onClick={() => setActiveTab('TAMBAH_SOAL')}
-              className={`flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
                 activeTab === 'TAMBAH_SOAL'
                   ? 'bg-amber-600 text-white'
                   : 'text-slate-400 hover:text-slate-200'
@@ -244,7 +244,7 @@ export const MaterialManagerModal: React.FC<MaterialManagerModalProps> = ({
         </div>
 
         {/* Scrollable Content Body */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain touch-pan-y p-3.5 sm:p-6 space-y-5 sm:space-y-6">
           {activeTab === 'MATERI' && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               {materials.map((mat, index) => (
