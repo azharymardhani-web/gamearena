@@ -135,48 +135,48 @@ export interface TeacherPostLocation {
 export const TEACHER_POSTS: TeacherPostLocation[] = [
   {
     index: 0,
-    title: 'Pak Azhary Mardhani · Gedung Utama MTsN 14',
-    buildingName: 'GEDUNG UTAMA MTsN 14 JAKARTA',
+    title: 'Pak Azhary · Gedung Utama & Ruang Guru',
+    buildingName: 'GEDUNG UTAMA & PTSP MTsN 14 HALIM',
     mapX: 1200,
     mapY: 360,
     colorHex: 0xf59e0b,
   },
   {
     index: 1,
-    title: 'Pos Guru 2 · Lab Sistem Komputer',
-    buildingName: 'LAB SISTEM KOMPUTER & HARDWARE',
+    title: 'Pak Azhary · Lab Komputer & Informatika',
+    buildingName: 'LAB KOMPUTER & MULTIMEDIA MTsN 14',
     mapX: 460,
     mapY: 380,
     colorHex: 0x0ea5e9,
   },
   {
     index: 2,
-    title: 'Pos Guru 3 · Menara Jaringan & Internet',
-    buildingName: 'MENARA JARINGAN & ROUTING DNS',
+    title: 'Pak Azhary · Masjid Al-Ikhlas MTsN 14',
+    buildingName: 'MASJID AL-IKHLAS MTsN 14 HALIM',
     mapX: 1940,
     mapY: 380,
     colorHex: 0x10b981,
   },
   {
     index: 3,
-    title: 'Pos Guru 4 · Studio Algoritma & Coding',
-    buildingName: 'STUDIO ALGORITMA & PEMROGRAMAN',
+    title: 'Pak Azhary · Gedung Kelas 7, 8, 9 & Perpus',
+    buildingName: 'GEDUNG KELAS 7-8-9 & PERPUSTAKAAN',
     mapX: 460,
     mapY: 1120,
     colorHex: 0xf43f5e,
   },
   {
     index: 4,
-    title: 'Pos Guru 5 · Pusat Analisis Data',
-    buildingName: 'PUSAT ANALISIS DATA & STATISTIK',
+    title: 'Pak Azhary · Aula Serbaguna & Ruang UKS',
+    buildingName: 'AULA SERBAGUNA & UKS MTsN 14 HALIM',
     mapX: 1940,
     mapY: 1120,
     colorHex: 0xa855f7,
   },
   {
     index: 5,
-    title: 'Pos Guru 6 · Markas Keamanan Siber',
-    buildingName: 'MARKAS KEAMANAN SIBER & KRIPTOGRAFI',
+    title: 'Pak Azhary · Gerbang Jl. Elang Halim & Kantin',
+    buildingName: 'GERBANG JL. ELANG KOMP. RAJAWALI HALIM',
     mapX: 1200,
     mapY: 1160,
     colorHex: 0x06b6d4,
@@ -204,6 +204,7 @@ interface HumanoidRig {
   nameCanvas: HTMLCanvasElement;
   nameTexture: THREE.CanvasTexture;
   lastSignature: string;
+  presetId: string;
   walkPhase: number;
 }
 
@@ -220,6 +221,7 @@ interface CyberArenaCanvasProps {
   players: MapPlayerEntity[];
   materials: InformaticsMaterial[];
   currentQuestion: InformaticsQuestion | null;
+  teleportCommand?: { x: number; y: number; seq: number } | null;
   onEmitLocalMove: (
     x: number,
     y: number,
@@ -235,19 +237,19 @@ interface CyberArenaCanvasProps {
   onLocalHudSync: (state: { x: number; y: number; hp: number }) => void;
 }
 
-// Create Procedural City Street & Grass Ground Texture (GTA San Andreas style urban grid)
+// Create Procedural MTs Negeri 14 Jakarta Timur (Kampus Halim Perdanakusuma) Ground Texture
 function createCityDistrictTexture(maxAnisotropy: number): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
   canvas.width = 1024;
   canvas.height = 1024;
   const ctx = canvas.getContext('2d')!;
 
-  // Base urban park grass & plaza stone
-  ctx.fillStyle = '#14261c';
+  // Lush Madrasah green courtyard & Halim Perdanakusuma complex grounds
+  ctx.fillStyle = '#143323';
   ctx.fillRect(0, 0, 1024, 1024);
 
-  // Subtle grass turf grid
-  ctx.strokeStyle = 'rgba(34, 197, 94, 0.06)';
+  // Subtle paving & grass grid
+  ctx.strokeStyle = 'rgba(52, 211, 153, 0.08)';
   ctx.lineWidth = 2;
   for (let i = 0; i <= 1024; i += 32) {
     ctx.beginPath();
@@ -258,15 +260,12 @@ function createCityDistrictTexture(maxAnisotropy: number): THREE.CanvasTexture {
     ctx.stroke();
   }
 
-  // Asphalt Road Network (Horizontal Boulevards & Vertical Avenues)
+  // Komplek Rajawali & Jl. Elang Halim Asphalt Roads + Paved Madrasah Corridors
   const drawRoadH = (y: number, h: number) => {
-    // Concrete sidewalk
-    ctx.fillStyle = '#475569';
-    ctx.fillRect(0, y - 14, 1024, h + 28);
-    // Dark asphalt
+    ctx.fillStyle = '#64748b';
+    ctx.fillRect(0, y - 12, 1024, h + 24);
     ctx.fillStyle = '#1e293b';
     ctx.fillRect(0, y, 1024, h);
-    // Double yellow/dashed center line
     ctx.strokeStyle = '#fbbf24';
     ctx.lineWidth = 4;
     ctx.setLineDash([24, 18]);
@@ -278,8 +277,8 @@ function createCityDistrictTexture(maxAnisotropy: number): THREE.CanvasTexture {
   };
 
   const drawRoadV = (x: number, w: number) => {
-    ctx.fillStyle = '#475569';
-    ctx.fillRect(x - 14, 0, w + 28, 1024);
+    ctx.fillStyle = '#64748b';
+    ctx.fillRect(x - 12, 0, w + 24, 1024);
     ctx.fillStyle = '#1e293b';
     ctx.fillRect(x, 0, w, 1024);
     ctx.strokeStyle = '#fbbf24';
@@ -292,20 +291,57 @@ function createCityDistrictTexture(maxAnisotropy: number): THREE.CanvasTexture {
     ctx.setLineDash([]);
   };
 
-  drawRoadH(260, 96);
-  drawRoadH(668, 96);
-  drawRoadV(260, 96);
-  drawRoadV(464, 96);
-  drawRoadV(668, 96);
+  drawRoadH(255, 86);
+  drawRoadH(680, 92); // Jl. Elang Komplek Rajawali Halim
+  drawRoadV(240, 84);
+  drawRoadV(470, 84);
+  drawRoadV(700, 84);
 
-  // Central School Courtyard Paved Plaza
-  ctx.fillStyle = '#334155';
+  // ============================================================================
+  // LAPANGAN UPACARA & OLAHRAGA MTs NEGERI 14 JAKARTA TIMUR (FUTSAL & BASKET)
+  // ============================================================================
+  const courtX = 330;
+  const courtY = 365;
+  const courtW = 364;
+  const courtH = 290;
+
+  // Outer terracotta jogging/ceremony border
+  ctx.fillStyle = '#9a3412';
   ctx.beginPath();
-  ctx.arc(512, 512, 130, 0, Math.PI * 2);
+  ctx.roundRect(courtX - 18, courtY - 18, courtW + 36, courtH + 36, 16);
   ctx.fill();
-  ctx.strokeStyle = '#38bdf8';
-  ctx.lineWidth = 6;
+
+  // Inner Emerald Green Multifunction Court (Khas Lapangan Madrasah Jakarta)
+  ctx.fillStyle = '#047857';
+  ctx.fillRect(courtX, courtY, courtW, courtH);
+
+  // White Court Lines (Garis Lapangan Futsal / Basket)
+  ctx.strokeStyle = '#f8fafc';
+  ctx.lineWidth = 5;
+  ctx.strokeRect(courtX + 10, courtY + 10, courtW - 20, courtH - 20);
+
+  // Center Line & Center Circle
+  ctx.beginPath();
+  ctx.moveTo(courtX + courtW / 2, courtY + 10);
+  ctx.lineTo(courtX + courtW / 2, courtY + courtH - 10);
   ctx.stroke();
+
+  ctx.beginPath();
+  ctx.arc(courtX + courtW / 2, courtY + courtH / 2, 42, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // Left & Right Penalty / Key Areas
+  ctx.strokeRect(courtX + 10, courtY + courtH / 2 - 55, 58, 110);
+  ctx.strokeRect(courtX + courtW - 68, courtY + courtH / 2 - 55, 58, 110);
+
+  // School Name Painted on Courtyard
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.88)';
+  ctx.font = '800 22px "Outfit", sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('LAPANGAN UPACARA MTs NEGERI 14 JAKARTA', 512, courtY + 42);
+  ctx.fillStyle = '#fde68a';
+  ctx.font = '700 16px "JetBrains Mono", monospace';
+  ctx.fillText('JL. ELANG · KOMP. RAJAWALI HALIM PERDANAKUSUMA', 512, courtY + courtH - 22);
 
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
@@ -370,6 +406,7 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
   players,
   materials,
   currentQuestion,
+  teleportCommand,
   onEmitLocalMove,
   onNearbyTeacherPostChange,
   onNearbyVersusTargetChange,
@@ -392,6 +429,7 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
     players,
     materials,
     currentQuestion,
+    teleportCommand,
     onEmitLocalMove,
     onNearbyTeacherPostChange,
     onNearbyVersusTargetChange,
@@ -413,6 +451,7 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
       players,
       materials,
       currentQuestion,
+      teleportCommand,
       onEmitLocalMove,
       onNearbyTeacherPostChange,
       onNearbyVersusTargetChange,
@@ -432,6 +471,7 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
     players,
     materials,
     currentQuestion,
+    teleportCommand,
     onEmitLocalMove,
     onNearbyTeacherPostChange,
     onNearbyVersusTargetChange,
@@ -741,29 +781,137 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
         nameCanvas,
         nameTexture,
         lastSignature: '',
+        presetId: preset.id,
         walkPhase: 0,
       };
     };
 
-    // Place 6 Major Buildings + 6 Pak Azhary Teacher Quest Posts with GTA Mission Markers
+    // Helper to create 3D Building Facade Signboard Sprite
+    const createBuildingSignboard = (titleText: string, subText: string, borderHex: string) => {
+      const sCanvas = document.createElement('canvas');
+      sCanvas.width = 512;
+      sCanvas.height = 112;
+      const sCtx = sCanvas.getContext('2d')!;
+      sCtx.fillStyle = 'rgba(6, 78, 59, 0.96)';
+      sCtx.strokeStyle = borderHex;
+      sCtx.lineWidth = 6;
+      sCtx.beginPath();
+      sCtx.roundRect(8, 8, 496, 96, 16);
+      sCtx.fill();
+      sCtx.stroke();
+
+      sCtx.fillStyle = '#ffffff';
+      sCtx.font = '800 24px "Outfit", sans-serif';
+      sCtx.textAlign = 'center';
+      sCtx.fillText(titleText, 256, 48);
+
+      sCtx.fillStyle = '#fde68a';
+      sCtx.font = '700 18px "JetBrains Mono", monospace';
+      sCtx.fillText(subText, 256, 80);
+
+      const sTex = new THREE.CanvasTexture(sCanvas);
+      sTex.colorSpace = THREE.SRGBColorSpace;
+      const sprite = new THREE.Sprite(
+        new THREE.SpriteMaterial({ map: sTex, transparent: true, depthWrite: false })
+      );
+      sprite.scale.set(16, 3.5, 1);
+      return sprite;
+    };
+
+    // ========================================================================
+    // 4A. TIANG BENDERA MERAH PUTIH & GAWANG FUTSAL DI LAPANGAN UPACARA MTsN 14
+    // ========================================================================
+    const flagpoleGroup = new THREE.Group();
+    flagpoleGroup.position.set(to3DX(1200), 0, to3DZ(585));
+    const flagpoleBase = new THREE.Mesh(
+      new THREE.BoxGeometry(3.6, 0.9, 3.6),
+      new THREE.MeshStandardMaterial({ color: 0xfef3c7, roughness: 0.6 })
+    );
+    flagpoleBase.position.y = 0.45;
+    flagpoleGroup.add(flagpoleBase);
+
+    const poleMesh = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.14, 0.2, 16, 12),
+      new THREE.MeshStandardMaterial({ color: 0xf8fafc, metalness: 0.6, roughness: 0.3 })
+    );
+    poleMesh.position.y = 8;
+    flagpoleGroup.add(poleMesh);
+
+    // Bendera Merah Putih
+    const flagRed = new THREE.Mesh(
+      new THREE.BoxGeometry(3.8, 1.1, 0.12),
+      new THREE.MeshStandardMaterial({ color: 0xdc2626, emissive: 0x991b1b, emissiveIntensity: 0.3 })
+    );
+    flagRed.position.set(1.95, 15.2, 0);
+    flagpoleGroup.add(flagRed);
+
+    const flagWhite = new THREE.Mesh(
+      new THREE.BoxGeometry(3.8, 1.1, 0.12),
+      new THREE.MeshStandardMaterial({ color: 0xffffff })
+    );
+    flagWhite.position.set(1.95, 14.1, 0);
+    flagpoleGroup.add(flagWhite);
+    scene.add(flagpoleGroup);
+
+    // Monumen Dirgantara / Siluet Pesawat TNI AU Halim Perdanakusuma di Dekat Gerbang Jl. Elang
+    const jetGroup = new THREE.Group();
+    jetGroup.position.set(to3DX(940), 0, to3DZ(1165));
+    const jetPedestal = new THREE.Mesh(
+      new THREE.CylinderGeometry(1.4, 2.2, 4.5, 8),
+      new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.5 })
+    );
+    jetPedestal.position.y = 2.25;
+    jetGroup.add(jetPedestal);
+
+    const jetBody = new THREE.Mesh(
+      new THREE.ConeGeometry(0.9, 6.5, 12),
+      new THREE.MeshStandardMaterial({ color: 0x38bdf8, metalness: 0.7, roughness: 0.25 })
+    );
+    jetBody.rotation.x = Math.PI / 2 - 0.35;
+    jetBody.position.y = 5.2;
+    jetGroup.add(jetBody);
+
+    const jetWings = new THREE.Mesh(
+      new THREE.BoxGeometry(5.6, 0.18, 1.8),
+      new THREE.MeshStandardMaterial({ color: 0xf59e0b, metalness: 0.6, roughness: 0.3 })
+    );
+    jetWings.rotation.x = -0.35;
+    jetWings.position.y = 5.0;
+    jetGroup.add(jetWings);
+
+    const jetSign = createBuildingSignboard(
+      'MONUMEN DIRGANTARA HALIM',
+      'KAWASAN LANUD HALIM PERDANAKUSUMA',
+      '#38bdf8'
+    );
+    jetSign.scale.set(11, 2.4, 1);
+    jetSign.position.set(0, 8.2, 0);
+    jetGroup.add(jetSign);
+    scene.add(jetGroup);
+
+    // ========================================================================
+    // 4B. 6 GEDUNG UTAMA KAMPUS MTs NEGERI 14 JAKARTA TIMUR (HALIM)
+    // ========================================================================
     TEACHER_POSTS.forEach((post) => {
       const bx = to3DX(post.mapX);
       const bz = to3DZ(post.mapY);
 
       const bGroup = new THREE.Group();
-      const bOffsetZ = post.mapY < 750 ? -13 : 13;
+      const bOffsetZ = post.mapY < 750 ? -14 : 14;
       bGroup.position.set(bx, 0, bz + bOffsetZ);
 
-      // Main Architectural Building Block
-      const bWidth = 28;
-      const bHeight = post.index === 0 ? 16 : 12.5;
+      const bWidth = post.index === 0 ? 34 : 28;
+      const bHeight = post.index === 0 ? 14.5 : 11.5;
       const bDepth = 14;
+
+      // Authentic Madrasah Negeri Emerald Green & Cream Facade
+      const wallColor = post.index === 2 ? 0x065f46 : 0x0f5132;
       const buildingMesh = new THREE.Mesh(
         new THREE.BoxGeometry(bWidth, bHeight, bDepth),
         new THREE.MeshStandardMaterial({
-          color: 0x1e293b,
-          roughness: 0.45,
-          metalness: 0.5,
+          color: wallColor,
+          roughness: 0.5,
+          metalness: 0.2,
         })
       );
       buildingMesh.position.y = bHeight / 2;
@@ -771,21 +919,61 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
       buildingMesh.receiveShadow = !isSoftwareGl;
       bGroup.add(buildingMesh);
 
-      // Glowing Neon Roof Cornice
-      const roofTrim = new THREE.Mesh(
-        new THREE.BoxGeometry(bWidth + 0.8, 0.7, bDepth + 0.8),
-        new THREE.MeshStandardMaterial({
-          color: post.colorHex,
-          emissive: post.colorHex,
-          emissiveIntensity: 0.8,
-        })
+      // Cream Horizontal Madrasah Balcony Band (Selasar Kelas)
+      const creamBand = new THREE.Mesh(
+        new THREE.BoxGeometry(bWidth + 0.6, 1.4, bDepth + 0.6),
+        new THREE.MeshStandardMaterial({ color: 0xfef3c7, roughness: 0.4 })
       );
-      roofTrim.position.y = bHeight + 0.35;
-      bGroup.add(roofTrim);
+      creamBand.position.y = bHeight * 0.5;
+      bGroup.add(creamBand);
 
-      // Illuminated Windows Strip
+      if (post.index === 2) {
+        // MASJID AL-IKHLAS MTsN 14 HALIM: Authentic Golden-Green Mosque Dome (Kubah) & Minaret
+        const domeMesh = new THREE.Mesh(
+          new THREE.SphereGeometry(6.2, 24, 16, 0, Math.PI * 2, 0, Math.PI / 2),
+          new THREE.MeshStandardMaterial({
+            color: 0x10b981,
+            emissive: 0x047857,
+            emissiveIntensity: 0.4,
+            metalness: 0.6,
+            roughness: 0.25,
+          })
+        );
+        domeMesh.position.y = bHeight;
+        bGroup.add(domeMesh);
+
+        const spireMesh = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.15, 0.35, 3.2, 8),
+          new THREE.MeshStandardMaterial({ color: 0xfbbf24, metalness: 0.8, roughness: 0.2 })
+        );
+        spireMesh.position.y = bHeight + 7.2;
+        bGroup.add(spireMesh);
+      } else {
+        // Traditional Indonesian School Terracotta Pitched Roof (Atap Genteng Merah Bata)
+        const roofTrim = new THREE.Mesh(
+          new THREE.BoxGeometry(bWidth + 1.6, 1.2, bDepth + 1.6),
+          new THREE.MeshStandardMaterial({
+            color: 0x9a3412,
+            roughness: 0.6,
+          })
+        );
+        roofTrim.position.y = bHeight + 0.6;
+        bGroup.add(roofTrim);
+
+        const roofUpper = new THREE.Mesh(
+          new THREE.BoxGeometry(bWidth - 4, 2.2, bDepth - 3),
+          new THREE.MeshStandardMaterial({
+            color: 0x7c2d12,
+            roughness: 0.65,
+          })
+        );
+        roofUpper.position.y = bHeight + 2.1;
+        bGroup.add(roofUpper);
+      }
+
+      // Illuminated Classroom / Lab Windows Strip
       const winMesh = new THREE.Mesh(
-        new THREE.BoxGeometry(bWidth - 4, 2.4, bDepth + 0.2),
+        new THREE.BoxGeometry(bWidth - 4, 2.4, bDepth + 0.3),
         new THREE.MeshStandardMaterial({
           color: 0xbae6fd,
           emissive: 0x38bdf8,
@@ -793,8 +981,17 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
           roughness: 0.2,
         })
       );
-      winMesh.position.y = bHeight * 0.58;
+      winMesh.position.y = bHeight * 0.74;
       bGroup.add(winMesh);
+
+      // 3D Signboard Above Building
+      const signSprite = createBuildingSignboard(
+        post.buildingName,
+        'KAMPUS MTsN 14 JAKARTA TIMUR · HALIM PK',
+        '#fbbf24'
+      );
+      signSprite.position.set(0, bHeight + 5.6, 0);
+      bGroup.add(signSprite);
 
       scene.add(bGroup);
 
@@ -966,7 +1163,7 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
     let lastMouseY = 0;
 
     let localMapX = WORLD_WIDTH / 2;
-    let localMapY = WORLD_HEIGHT / 2 + 120;
+    let localMapY = WORLD_HEIGHT / 2 + 30;
     let localJumpY = 0;
     let localJumpVy = 0;
     let localDashTimer = 0;
@@ -975,6 +1172,7 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
     let localWalkPhase = 0;
     let lastNearbyTeacherIdx: number | null = null;
     let lastNearbyVersusId: string | null = null;
+    let lastTeleportSeq = 0;
     let wsEmitCooldown = 0;
     let hudSyncCooldown = 0;
 
@@ -1084,6 +1282,26 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
       // UPDATE LOCAL HUMANOID IN GTA OPEN-WORLD DISTRICT
       // ======================================================================
       if (currentProps.joinedRoom) {
+        if (
+          currentProps.teleportCommand &&
+          currentProps.teleportCommand.seq !== lastTeleportSeq
+        ) {
+          lastTeleportSeq = currentProps.teleportCommand.seq;
+          localMapX = THREE.MathUtils.clamp(
+            currentProps.teleportCommand.x,
+            70,
+            WORLD_WIDTH - 70
+          );
+          localMapY = THREE.MathUtils.clamp(
+            currentProps.teleportCommand.y,
+            70,
+            WORLD_HEIGHT - 70
+          );
+          localJumpY = 2.2;
+          localJumpVy = 6;
+          currentProps.onEmitLocalMove(Math.round(localMapX), Math.round(localMapY), 0, 0);
+        }
+
         if (heldKeys.has('KeyQ')) cameraYaw += 1.8 * dt;
         if (heldKeys.has('KeyE')) cameraYaw -= 1.8 * dt;
 
@@ -1247,6 +1465,12 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
         activeIds.add(currentProps.localPlayerId);
         const preset = getPresetById(currentProps.localPlayerPreset);
         let localRig = playerRigs.get(currentProps.localPlayerId);
+        if (localRig && localRig.presetId !== preset.id) {
+          scene.remove(localRig.group);
+          localRig.nameTexture.dispose();
+          playerRigs.delete(currentProps.localPlayerId);
+          localRig = undefined;
+        }
         if (!localRig) {
           localRig = buildHumanoidCharacter(
             preset,
@@ -1287,16 +1511,23 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
         if (rp.id === currentProps.localPlayerId) continue;
         activeIds.add(rp.id);
 
+        const preset = getPresetById(rp.characterPreset);
         let rig = playerRigs.get(rp.id);
+        if (rig && rig.presetId !== preset.id) {
+          scene.remove(rig.group);
+          rig.nameTexture.dispose();
+          playerRigs.delete(rp.id);
+          rig = undefined;
+        }
+
+        const isOnlineHuman = !rp.isRoamingPeer;
+        const badgeColor = isOnlineHuman ? '#10b981' : '#fbbf24';
+        const subLabel = isOnlineHuman
+          ? `● ONLINE · ${rp.studentClass} · [V] VERSUS`
+          : `${rp.studentClass} · [V] VERSUS`;
+
         if (!rig) {
-          const preset = getPresetById(rp.characterPreset);
-          rig = buildHumanoidCharacter(
-            preset,
-            rp.name,
-            `${rp.studentClass} · [V] VERSUS`,
-            '#fbbf24',
-            false
-          );
+          rig = buildHumanoidCharacter(preset, rp.name, subLabel, badgeColor, false);
           rig.group.position.set(to3DX(rp.x), 0, to3DZ(rp.y));
           scene.add(rig.group);
           playerRigs.set(rp.id, rig);
@@ -1308,8 +1539,14 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
         const dz = tz - rig.group.position.z;
         const distMoved = Math.hypot(dx, dz);
 
-        rig.group.position.x = THREE.MathUtils.damp(rig.group.position.x, tx, 8, dt);
-        rig.group.position.z = THREE.MathUtils.damp(rig.group.position.z, tz, 8, dt);
+        if (distMoved > 35) {
+          // Instant snap if player teleported across the map
+          rig.group.position.x = tx;
+          rig.group.position.z = tz;
+        } else {
+          rig.group.position.x = THREE.MathUtils.damp(rig.group.position.x, tx, 10, dt);
+          rig.group.position.z = THREE.MathUtils.damp(rig.group.position.z, tz, 10, dt);
+        }
 
         if (distMoved > 0.05) {
           const targetRot = Math.atan2(dx, dz);
@@ -1330,16 +1567,10 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
           );
         }
 
-        const sig = `${rp.name}|${rp.studentClass}|${rp.score}`;
+        const sig = `${rp.name}|${rp.studentClass}|${rp.score}|${isOnlineHuman}`;
         if (rig.lastSignature !== sig) {
           rig.lastSignature = sig;
-          drawOverheadTag(
-            rig.nameCanvas,
-            rp.name,
-            `${rp.studentClass} · [TEKAN V VERSUS]`,
-            '#fbbf24',
-            false
-          );
+          drawOverheadTag(rig.nameCanvas, rp.name, subLabel, badgeColor, false);
           rig.nameTexture.needsUpdate = true;
         }
       }
@@ -1447,15 +1678,21 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
             rCtx.fillText('G', gx, gy + 3);
           }
 
-          // 3. Orange/Cyan Blips for Other Students (Versus Targets)
+          // 3. Cyan/Emerald Blips for Real Online Classmates & Red Blips for NPC Students
           for (const rp of currentProps.players) {
             if (rp.id === currentProps.localPlayerId) continue;
             const px = cx + (rp.x - localMapX) * scaleMap;
             const py = cy + (rp.y - localMapY) * scaleMap;
-            rCtx.fillStyle = '#f43f5e';
+            const isOnlineHuman = !rp.isRoamingPeer;
+            rCtx.fillStyle = isOnlineHuman ? '#38bdf8' : '#f43f5e';
             rCtx.beginPath();
-            rCtx.arc(px, py, 5, 0, Math.PI * 2);
+            rCtx.arc(px, py, isOnlineHuman ? 6.5 : 4.5, 0, Math.PI * 2);
             rCtx.fill();
+            if (isOnlineHuman) {
+              rCtx.strokeStyle = '#ffffff';
+              rCtx.lineWidth = 1.5;
+              rCtx.stroke();
+            }
           }
 
           // 4. Center Local Player Arrow
