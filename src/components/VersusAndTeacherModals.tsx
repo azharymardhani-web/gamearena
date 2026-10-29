@@ -589,32 +589,17 @@ export const TeacherQuestModal: React.FC<TeacherQuestModalProps> = ({
 
           {/* Right Column: Active Question & Material Briefing */}
           <div className="lg:col-span-8 p-3.5 sm:p-6 space-y-4 sm:space-y-5 lg:overflow-y-auto lg:max-h-[75dvh]">
-            {/* Toggle Material Briefing */}
+            {/* Independent Assessment Badge */}
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="text-xs text-slate-400">
                 {activeQ.category} · {activeQ.gradeLevel} · {activeQ.cognitiveLevel} · Skor{' '}
                 <strong className="font-mono text-sky-400">{activeQ.points} PTS</strong>
               </div>
-              <button
-                onClick={() => setShowMaterialTab((prev) => !prev)}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-sky-300 bg-sky-950/50 hover:bg-sky-900/60 border border-sky-700/60 rounded-lg transition-colors"
-              >
-                <BookOpen className="w-3.5 h-3.5" />
-                {showMaterialTab ? 'Sembunyikan Modul Materi' : 'Baca Materi Pendukung'}
-              </button>
-            </div>
-
-            {showMaterialTab && relatedMaterial && (
-              <div className="p-4 bg-slate-950 border border-sky-800/70 rounded-xl space-y-2">
-                <div className="text-xs font-bold text-sky-400">
-                  Modul Materi: {relatedMaterial.title}
-                </div>
-                <p className="text-xs text-slate-300 leading-relaxed">{relatedMaterial.summary}</p>
-                <div className="text-xs font-mono text-amber-300 bg-slate-900 px-3 py-1.5 rounded-lg border border-slate-800">
-                  {relatedMaterial.formulaOrLogic}
-                </div>
+              <div className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-mono font-bold text-amber-400 bg-amber-500/10 border border-amber-500/30 rounded-lg">
+                <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
+                <span>UJIAN MANDIRI SISWA</span>
               </div>
-            )}
+            </div>
 
             {/* Question Stem */}
             <div className="p-4 bg-slate-950 border border-slate-800 rounded-xl">

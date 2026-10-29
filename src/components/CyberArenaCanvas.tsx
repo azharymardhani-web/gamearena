@@ -7,6 +7,7 @@ import {
   OptionKey,
 } from '../data/informaticsData';
 import { soundEngine } from '../utils/soundEngine';
+import { useDeviceViewport } from '../utils/useDeviceViewport';
 
 export const WORLD_WIDTH = 2400;
 export const WORLD_HEIGHT = 1500;
@@ -141,41 +142,41 @@ export const TEACHER_POSTS: TeacherPostLocation[] = [
   {
     index: 0,
     title: 'Pak Azhary · Gedung Utama & Ruang Guru',
-    buildingName: 'GEDUNG UTAMA & PTSP MTsN 14 HALIM',
+    buildingName: 'GEDUNG UTAMA MTs NEGERI 14 JAKARTA TIMUR',
     mapX: 1200,
-    mapY: 360,
+    mapY: 200,
     colorHex: 0xf59e0b,
   },
   {
     index: 1,
     title: 'Pak Azhary · Lab Komputer & Informatika',
     buildingName: 'LAB KOMPUTER & MULTIMEDIA MTsN 14',
-    mapX: 460,
-    mapY: 380,
+    mapX: 420,
+    mapY: 200,
     colorHex: 0x0ea5e9,
   },
   {
     index: 2,
-    title: 'Pak Azhary · Masjid Al-Ikhlas MTsN 14',
-    buildingName: 'MASJID AL-IKHLAS MTsN 14 HALIM',
-    mapX: 1940,
-    mapY: 380,
+    title: 'Pak Azhary · Masjid Al - Huda MTsN 14',
+    buildingName: 'MASJID AL - HUDA MTsN 14 HALIM',
+    mapX: 1980,
+    mapY: 200,
     colorHex: 0x10b981,
   },
   {
     index: 3,
     title: 'Pak Azhary · Gedung Kelas 7, 8, 9 & Perpus',
     buildingName: 'GEDUNG KELAS 7-8-9 & PERPUSTAKAAN',
-    mapX: 460,
-    mapY: 1120,
+    mapX: 420,
+    mapY: 1300,
     colorHex: 0xf43f5e,
   },
   {
     index: 4,
     title: 'Pak Azhary · Aula Serbaguna & Ruang UKS',
     buildingName: 'AULA SERBAGUNA & UKS MTsN 14 HALIM',
-    mapX: 1940,
-    mapY: 1120,
+    mapX: 1980,
+    mapY: 1300,
     colorHex: 0xa855f7,
   },
   {
@@ -183,7 +184,7 @@ export const TEACHER_POSTS: TeacherPostLocation[] = [
     title: 'Pak Azhary · Gerbang Jl. Elang Halim & Kantin',
     buildingName: 'GERBANG JL. ELANG KOMP. RAJAWALI HALIM',
     mapX: 1200,
-    mapY: 1160,
+    mapY: 1390,
     colorHex: 0x06b6d4,
   },
 ];
@@ -241,115 +242,395 @@ interface CyberArenaCanvasProps {
   ) => void;
   onNearbyTeacherPostChange: (post: TeacherPostLocation | null) => void;
   onNearbyVersusTargetChange: (target: MapPlayerEntity | null) => void;
+  onNearbyBuildingEntranceChange?: (post: TeacherPostLocation | null) => void;
+  onEnterBuildingInterior?: (post: TeacherPostLocation) => void;
   onItemPickedUpToast: (itemName: string, mpGain: number) => void;
   onLocalHudSync: (state: { x: number; y: number; hp: number }) => void;
 }
 
-// Create Procedural MTs Negeri 14 Jakarta Timur (Kampus Halim Perdanakusuma) Ground Texture
+// Create Procedural MTs Negeri 14 Jakarta Timur (Kampus Halim Perdanakusuma) Ground & Green Sports Court Texture
 function createCityDistrictTexture(maxAnisotropy: number): THREE.CanvasTexture {
+  const cw = 2048;
+  const ch = 1280;
   const canvas = document.createElement('canvas');
-  canvas.width = 1024;
-  canvas.height = 1024;
+  canvas.width = cw;
+  canvas.height = ch;
   const ctx = canvas.getContext('2d')!;
 
-  // Lush Madrasah green courtyard & Halim Perdanakusuma complex grounds
-  ctx.fillStyle = '#143323';
-  ctx.fillRect(0, 0, 1024, 1024);
+  // Map to Canvas projection helpers (1:1 precision!)
+  const mxToPx = (mx: number) => (mx / 2400) * cw;
+  const myToPy = (my: number) => (my / 1500) * ch;
+  const mwToPw = (mw: number) => (mw / 2400) * cw;
+  const mhToPh = (mh: number) => (mh / 1500) * ch;
 
-  // Subtle paving & grass grid
-  ctx.strokeStyle = 'rgba(52, 211, 153, 0.08)';
-  ctx.lineWidth = 2;
-  for (let i = 0; i <= 1024; i += 32) {
+  // 1. Lush Madrasah green courtyard grounds
+  ctx.fillStyle = '#155e34';
+  ctx.fillRect(0, 0, cw, ch);
+
+  // 2. Subtle paving & grass tile grid lines
+  ctx.strokeStyle = 'rgba(134, 239, 172, 0.1)';
+  ctx.lineWidth = 1.5;
+  for (let mx = 0; mx <= 2400; mx += 40) {
     ctx.beginPath();
-    ctx.moveTo(i, 0);
-    ctx.lineTo(i, 1024);
-    ctx.moveTo(0, i);
-    ctx.lineTo(1024, i);
+    ctx.moveTo(mxToPx(mx), 0);
+    ctx.lineTo(mxToPx(mx), ch);
+    ctx.stroke();
+  }
+  for (let my = 0; my <= 1500; my += 40) {
+    ctx.beginPath();
+    ctx.moveTo(0, myToPy(my));
+    ctx.lineTo(cw, myToPy(my));
     ctx.stroke();
   }
 
-  // Komplek Rajawali & Jl. Elang Halim Asphalt Roads + Paved Madrasah Corridors
-  const drawRoadH = (y: number, h: number) => {
-    ctx.fillStyle = '#64748b';
-    ctx.fillRect(0, y - 12, 1024, h + 24);
-    ctx.fillStyle = '#1e293b';
-    ctx.fillRect(0, y, 1024, h);
-    ctx.strokeStyle = '#fbbf24';
-    ctx.lineWidth = 4;
-    ctx.setLineDash([24, 18]);
+  // 3. Outer Ring Asphalt Roads (Jalan Aspal Outer Ring Kampus)
+  const drawAsphaltH = (myStart: number, myH: number) => {
+    ctx.fillStyle = '#facc15';
+    ctx.fillRect(0, myToPy(myStart - 4), cw, mhToPh(myH + 8));
+    ctx.fillStyle = '#334155';
+    ctx.fillRect(0, myToPy(myStart), cw, mhToPh(myH));
+    ctx.strokeStyle = '#fde047';
+    ctx.lineWidth = 3;
+    ctx.setLineDash([24, 16]);
     ctx.beginPath();
-    ctx.moveTo(0, y + h / 2);
-    ctx.lineTo(1024, y + h / 2);
+    ctx.moveTo(0, myToPy(myStart + myH / 2));
+    ctx.lineTo(cw, myToPy(myStart + myH / 2));
     ctx.stroke();
     ctx.setLineDash([]);
   };
 
-  const drawRoadV = (x: number, w: number) => {
-    ctx.fillStyle = '#64748b';
-    ctx.fillRect(x - 12, 0, w + 24, 1024);
-    ctx.fillStyle = '#1e293b';
-    ctx.fillRect(x, 0, w, 1024);
-    ctx.strokeStyle = '#fbbf24';
-    ctx.lineWidth = 4;
-    ctx.setLineDash([24, 18]);
+  const drawAsphaltV = (mxStart: number, mxW: number) => {
+    ctx.fillStyle = '#facc15';
+    ctx.fillRect(mxToPx(mxStart - 4), 0, mwToPw(mxW + 8), ch);
+    ctx.fillStyle = '#334155';
+    ctx.fillRect(mxToPx(mxStart), 0, mwToPw(mxW), ch);
+    ctx.strokeStyle = '#fde047';
+    ctx.lineWidth = 3;
+    ctx.setLineDash([24, 16]);
     ctx.beginPath();
-    ctx.moveTo(x + w / 2, 0);
-    ctx.lineTo(x + w / 2, 1024);
+    ctx.moveTo(mxToPx(mxStart + mxW / 2), 0);
+    ctx.lineTo(mxToPx(mxStart + mxW / 2), ch);
     ctx.stroke();
     ctx.setLineDash([]);
   };
 
-  drawRoadH(255, 86);
-  drawRoadH(680, 92); // Jl. Elang Komplek Rajawali Halim
-  drawRoadV(240, 84);
-  drawRoadV(470, 84);
-  drawRoadV(700, 84);
+  drawAsphaltH(0, 80);
+  drawAsphaltH(1420, 80);
+  drawAsphaltV(0, 80);
+  drawAsphaltV(2320, 80);
 
-  // ============================================================================
-  // LAPANGAN UPACARA & OLAHRAGA MTs NEGERI 14 JAKARTA TIMUR (FUTSAL & BASKET)
-  // ============================================================================
-  const courtX = 330;
-  const courtY = 365;
-  const courtW = 364;
-  const courtH = 290;
+  // 4. Inner Paved Walkway Corridors (Jalan Paving & Selasar Kampus)
+  const drawWalkwayH = (myStart: number, myH: number) => {
+    ctx.fillStyle = '#166534';
+    ctx.fillRect(mxToPx(80), myToPy(myStart - 6), mwToPw(2240), mhToPh(myH + 12));
+    ctx.fillStyle = '#cbd5e1';
+    ctx.fillRect(mxToPx(80), myToPy(myStart), mwToPw(2240), mhToPh(myH));
+    ctx.strokeStyle = '#94a3b8';
+    ctx.lineWidth = 1.5;
+    const pY = myToPy(myStart);
+    const pH = mhToPh(myH);
+    for (let px = mxToPx(80); px <= mxToPx(2320); px += 24) {
+      ctx.beginPath();
+      ctx.moveTo(px, pY);
+      ctx.lineTo(px, pY + pH);
+      ctx.stroke();
+    }
+  };
 
-  // Outer terracotta jogging/ceremony border
-  ctx.fillStyle = '#9a3412';
+  const drawWalkwayV = (mxStart: number, mxW: number, myFrom: number, myTo: number) => {
+    ctx.fillStyle = '#166534';
+    ctx.fillRect(mxToPx(mxStart - 6), myToPy(myFrom), mwToPw(mxW + 12), mhToPh(myTo - myFrom));
+    ctx.fillStyle = '#cbd5e1';
+    ctx.fillRect(mxToPx(mxStart), myToPy(myFrom), mwToPw(mxW), mhToPh(myTo - myFrom));
+    ctx.strokeStyle = '#94a3b8';
+    ctx.lineWidth = 1.5;
+    const pX = mxToPx(mxStart);
+    const pW = mwToPw(mxW);
+    for (let py = myToPy(myFrom); py <= myToPy(myTo); py += 24) {
+      ctx.beginPath();
+      ctx.moveTo(pX, py);
+      ctx.lineTo(pX + pW, py);
+      ctx.stroke();
+    }
+  };
+
+  drawWalkwayH(330, 70);  // North Corridor
+  drawWalkwayH(1110, 70); // South Corridor
+  drawWalkwayV(630, 70, 330, 1180);  // West Cross Corridor
+  drawWalkwayV(1700, 70, 330, 1180); // East Cross Corridor
+  drawWalkwayV(1130, 140, 1110, 1500); // Grand Entrance Avenue
+
+  // 5. Dedicated Building Plazas (Landasan Paving Presisi di Bawah Setiap Gedung)
+  const drawBuildingPlaza = (cx: number, cy: number, w: number, h: number) => {
+    ctx.fillStyle = '#14532d';
+    ctx.fillRect(
+      mxToPx(cx - w / 2 - 8),
+      myToPy(cy - h / 2 - 8),
+      mwToPw(w + 16),
+      mhToPh(h + 16)
+    );
+    ctx.fillStyle = '#e2e8f0';
+    ctx.fillRect(
+      mxToPx(cx - w / 2),
+      myToPy(cy - h / 2),
+      mwToPw(w),
+      mhToPh(h)
+    );
+    ctx.strokeStyle = '#cbd5e1';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(
+      mxToPx(cx - w / 2),
+      myToPy(cy - h / 2),
+      mwToPw(w),
+      mhToPh(h)
+    );
+  };
+
+  // Gedung Utama Plaza (1200, 200)
+  drawBuildingPlaza(1200, 200, 520, 260);
+  // Lab Komputer Plaza (420, 200)
+  drawBuildingPlaza(420, 200, 380, 260);
+  // Masjid Al - Huda Plaza (1980, 200)
+  drawBuildingPlaza(1980, 200, 420, 260);
+  // Gedung Kelas Plaza (420, 1300)
+  drawBuildingPlaza(420, 1300, 380, 240);
+  // Aula Serbaguna Plaza (1980, 1300)
+  drawBuildingPlaza(1980, 1300, 380, 240);
+  // Gerbang Utama Plaza (1200, 1390)
+  drawBuildingPlaza(1200, 1390, 420, 180);
+
+  // 6. LAPANGAN HIJAU MULTIFUNGSI (FUTSAL, BASKET & UPACARA) MTs NEGERI 14 JAKARTA TIMUR
+  const cMx = 720;
+  const cMy = 470;
+  const cMw = 960;
+  const cMh = 560;
+
+  const cPx = mxToPx(cMx);
+  const cPy = myToPy(cMy);
+  const cPw = mwToPw(cMw);
+  const cPh = mhToPh(cMh);
+
+  // Dark green concrete apron around court
+  ctx.fillStyle = '#14532d';
   ctx.beginPath();
-  ctx.roundRect(courtX - 18, courtY - 18, courtW + 36, courtH + 36, 16);
+  ctx.roundRect(cPx - 20, cPy - 20, cPw + 40, cPh + 40, 18);
   ctx.fill();
 
-  // Inner Emerald Green Multifunction Court (Khas Lapangan Madrasah Jakarta)
-  ctx.fillStyle = '#047857';
-  ctx.fillRect(courtX, courtY, courtW, courtH);
+  // Bright Leaf-Green Multifunction Court Surface
+  const courtGrad = ctx.createLinearGradient(cPx, cPy, cPx + cPw, cPy + cPh);
+  courtGrad.addColorStop(0, '#22c55e');
+  courtGrad.addColorStop(0.5, '#16a34a');
+  courtGrad.addColorStop(1, '#15803d');
+  ctx.fillStyle = courtGrad;
+  ctx.fillRect(cPx, cPy, cPw, cPh);
 
-  // White Court Lines (Garis Lapangan Futsal / Basket)
-  ctx.strokeStyle = '#f8fafc';
-  ctx.lineWidth = 5;
-  ctx.strokeRect(courtX + 10, courtY + 10, courtW - 20, courtH - 20);
+  // Concrete Slab Joint Grid on Court
+  ctx.strokeStyle = 'rgba(20, 83, 45, 0.25)';
+  ctx.lineWidth = 2;
+  for (let px = cPx; px <= cPx + cPw; px += 48) {
+    ctx.beginPath();
+    ctx.moveTo(px, cPy);
+    ctx.lineTo(px, cPy + cPh);
+    ctx.stroke();
+  }
+  for (let py = cPy; py <= cPy + cPh; py += 48) {
+    ctx.beginPath();
+    ctx.moveTo(cPx, py);
+    ctx.lineTo(cPx + cPw, py);
+    ctx.stroke();
+  }
 
-  // Center Line & Center Circle
+  // Basketball & Futsal Penalty Arcs in Orange
+  ctx.strokeStyle = '#f97316';
+  ctx.lineWidth = 6;
   ctx.beginPath();
-  ctx.moveTo(courtX + courtW / 2, courtY + 10);
-  ctx.lineTo(courtX + courtW / 2, courtY + courtH - 10);
+  ctx.arc(cPx + 40, cPy + cPh / 2, 110, -Math.PI / 2, Math.PI / 2);
   ctx.stroke();
 
   ctx.beginPath();
-  ctx.arc(courtX + courtW / 2, courtY + courtH / 2, 42, 0, Math.PI * 2);
+  ctx.arc(cPx + cPw - 40, cPy + cPh / 2, 110, Math.PI / 2, -Math.PI / 2);
   ctx.stroke();
 
-  // Left & Right Penalty / Key Areas
-  ctx.strokeRect(courtX + 10, courtY + courtH / 2 - 55, 58, 110);
-  ctx.strokeRect(courtX + courtW - 68, courtY + courtH / 2 - 55, 58, 110);
+  ctx.beginPath();
+  ctx.arc(cPx + cPw / 2, cPy + cPh / 2, 95, 0, Math.PI * 2);
+  ctx.stroke();
 
-  // School Name Painted on Courtyard
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.88)';
-  ctx.font = '800 22px "Outfit", sans-serif';
+  // Bright Yellow Court Boundary & Lines
+  ctx.strokeStyle = '#fde047';
+  ctx.lineWidth = 7;
+  ctx.strokeRect(cPx + 16, cPy + 16, cPw - 32, cPh - 32);
+
+  // Yellow Center Line
+  ctx.beginPath();
+  ctx.moveTo(cPx + cPw / 2, cPy + 16);
+  ctx.lineTo(cPx + cPw / 2, cPy + cPh - 16);
+  ctx.stroke();
+
+  // Yellow Center Circle
+  ctx.beginPath();
+  ctx.arc(cPx + cPw / 2, cPy + cPh / 2, 64, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // Left & Right Futsal / Basketball Key Boxes
+  ctx.strokeRect(cPx + 16, cPy + cPh / 2 - 80, 90, 160);
+  ctx.strokeRect(cPx + cPw - 106, cPy + cPh / 2 - 80, 90, 160);
+
+  // School Name Printed on Court Border
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+  ctx.font = '800 24px "Outfit", sans-serif';
   ctx.textAlign = 'center';
-  ctx.fillText('LAPANGAN UPACARA MTs NEGERI 14 JAKARTA', 512, courtY + 42);
-  ctx.fillStyle = '#fde68a';
+  ctx.fillText('MADRASAH TSANAWIYAH NEGERI 14 JAKARTA TIMUR', cw / 2, cPy + 48);
+  ctx.fillStyle = '#fef08a';
   ctx.font = '700 16px "JetBrains Mono", monospace';
-  ctx.fillText('JL. ELANG · KOMP. RAJAWALI HALIM PERDANAKUSUMA', 512, courtY + courtH - 22);
+  ctx.fillText('LAPANGAN UTAMA & MASJID AL - HUDA · KOMP. RAJAWALI HALIM PK', cw / 2, cPy + cPh - 22);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = maxAnisotropy;
+  return tex;
+}
+
+// Create Procedural Sky Constellation & Clouds Backdrop matching the attached MTsN 14 reference image
+function createHalimConstellationSkyTexture(maxAnisotropy: number): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 1024;
+  canvas.height = 256;
+  const ctx = canvas.getContext('2d')!;
+
+  // Royal blue to bright cerulean sky gradient
+  const skyGrad = ctx.createLinearGradient(0, 0, 0, 256);
+  skyGrad.addColorStop(0, '#034ea2');
+  skyGrad.addColorStop(0.55, '#0284c7');
+  skyGrad.addColorStop(1, '#7dd3fc');
+  ctx.fillStyle = skyGrad;
+  ctx.fillRect(0, 0, 1024, 256);
+
+  // Sunburst on the upper-left sky (matching photo)
+  const sunGrad = ctx.createRadialGradient(230, 58, 4, 230, 58, 95);
+  sunGrad.addColorStop(0, 'rgba(255, 255, 255, 1)');
+  sunGrad.addColorStop(0.25, 'rgba(254, 249, 195, 0.85)');
+  sunGrad.addColorStop(1, 'rgba(56, 189, 248, 0)');
+  ctx.fillStyle = sunGrad;
+  ctx.fillRect(120, 0, 220, 160);
+
+  // Fluffy white cumulus clouds along the bottom horizon
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.88)';
+  for (let x = 20; x < 1024; x += 68) {
+    const r = 28 + ((x * 13) % 24);
+    ctx.beginPath();
+    ctx.arc(x, 238, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Constellation network lines & stars in the sky (Book, Toga, Globe, Laptop, Lightbulb)
+  ctx.strokeStyle = 'rgba(224, 242, 254, 0.65)';
+  ctx.fillStyle = '#ffffff';
+  ctx.lineWidth = 1.8;
+
+  const drawConstellationNode = (nx: number, ny: number) => {
+    ctx.beginPath();
+    ctx.arc(nx, ny, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+  };
+
+  // 1. Open Book Constellation (Left)
+  const bookPts = [
+    [90, 130],
+    [135, 115],
+    [135, 165],
+    [90, 180],
+    [90, 130],
+    [135, 115],
+    [180, 130],
+    [180, 180],
+    [135, 165],
+  ];
+  ctx.beginPath();
+  bookPts.forEach(([px, py], i) => (i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py)));
+  ctx.stroke();
+  bookPts.forEach(([px, py]) => drawConstellationNode(px, py));
+
+  // 2. Graduation Cap / Toga Constellation
+  const capPts = [
+    [310, 95],
+    [365, 72],
+    [420, 95],
+    [365, 118],
+    [310, 95],
+  ];
+  ctx.beginPath();
+  capPts.forEach(([px, py], i) => (i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py)));
+  ctx.stroke();
+  capPts.forEach(([px, py]) => drawConstellationNode(px, py));
+
+  // 3. Globe Constellation (Center)
+  ctx.beginPath();
+  ctx.arc(512, 112, 38, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.ellipse(512, 112, 18, 38, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  drawConstellationNode(512, 74);
+  drawConstellationNode(512, 150);
+
+  // 4. Laptop & Lightbulb Constellation (Right)
+  const laptopPts = [
+    [840, 82],
+    [910, 82],
+    [910, 128],
+    [840, 128],
+    [840, 82],
+  ];
+  ctx.beginPath();
+  laptopPts.forEach(([px, py], i) => (i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py)));
+  ctx.stroke();
+  laptopPts.forEach(([px, py]) => drawConstellationNode(px, py));
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = maxAnisotropy;
+  return tex;
+}
+
+// Create Authentic MTsN 14 Green Wall Emblem & Typography Plaque matching the Main Building photo
+function createMtsn14WallCrestTexture(maxAnisotropy: number): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 160;
+  const ctx = canvas.getContext('2d')!;
+
+  // Match the light pastel green facade wall (#7ccf6a)
+  ctx.fillStyle = '#7ccf6a';
+  ctx.fillRect(0, 0, 512, 160);
+
+  // Subtle dark green top border
+  ctx.fillStyle = '#14532d';
+  ctx.fillRect(0, 0, 512, 10);
+
+  // Kemenag Shield Emblem in the center top
+  ctx.fillStyle = '#15803d';
+  ctx.strokeStyle = '#facc15';
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.roundRect(234, 18, 44, 42, 8);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = '#fde047';
+  ctx.font = '800 18px "Outfit", sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('★', 256, 45);
+
+  // Authentic Dark Green Wall Typography from the photo
+  ctx.fillStyle = '#14532d';
+  ctx.font = '800 17px "Outfit", sans-serif';
+  ctx.fillText('MADRASAH TSANAWIYAH NEGERI 14 JAKARTA TIMUR', 256, 82);
+
+  ctx.font = '900 32px "Outfit", sans-serif';
+  ctx.fillText('MTSN 14', 256, 118);
+
+  ctx.font = '700 14px "JetBrains Mono", monospace';
+  ctx.fillText('JL. ELANG KOMP. RAJAWALI · JAKARTA TIMUR', 256, 142);
 
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
@@ -449,9 +730,12 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
   onEmitLocalMove,
   onNearbyTeacherPostChange,
   onNearbyVersusTargetChange,
+  onNearbyBuildingEntranceChange,
+  onEnterBuildingInterior,
   onItemPickedUpToast,
   onLocalHudSync,
 }) => {
+  const vp = useDeviceViewport();
   const mountRef = useRef<HTMLDivElement | null>(null);
   const radarCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const touchStickRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -478,6 +762,8 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
     onEmitLocalMove,
     onNearbyTeacherPostChange,
     onNearbyVersusTargetChange,
+    onNearbyBuildingEntranceChange,
+    onEnterBuildingInterior,
     onItemPickedUpToast,
     onLocalHudSync,
   });
@@ -501,6 +787,8 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
       onEmitLocalMove,
       onNearbyTeacherPostChange,
       onNearbyVersusTargetChange,
+      onNearbyBuildingEntranceChange,
+      onEnterBuildingInterior,
       onItemPickedUpToast,
       onLocalHudSync,
     };
@@ -522,6 +810,8 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
     onEmitLocalMove,
     onNearbyTeacherPostChange,
     onNearbyVersusTargetChange,
+    onNearbyBuildingEntranceChange,
+    onEnterBuildingInterior,
     onItemPickedUpToast,
     onLocalHudSync,
   ]);
@@ -545,11 +835,15 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
       antialias: !isSoftwareGl,
       powerPreference: 'high-performance',
     });
+    const initW = container.clientWidth || window.innerWidth;
+    const initH = container.clientHeight || window.innerHeight;
+    const initAspect = initW / Math.max(1, initH);
+
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.12;
     renderer.setPixelRatio(isSoftwareGl ? 1 : Math.min(window.devicePixelRatio, 2));
-    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setSize(initW, initH);
     renderer.shadowMap.enabled = !isSoftwareGl;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
@@ -557,10 +851,10 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
     container.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
-    // Golden-hour / twilight San Andreas urban sky atmosphere
-    const horizonColor = new THREE.Color(0x132238);
+    // Bright Daytime Cerulean Blue Sky Atmosphere matching MTsN 14 Halim Reference Photo
+    const horizonColor = new THREE.Color(0x0284c7);
     scene.background = horizonColor;
-    scene.fog = new THREE.FogExp2(0x132238, 0.004);
+    scene.fog = new THREE.FogExp2(0x38bdf8, 0.0022);
 
     // 2. Mandatory Studio Environment Reflection (RoomEnvironment + PMREMGenerator)
     const pmremGenerator = new THREE.PMREMGenerator(renderer);
@@ -568,20 +862,20 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
     pmremGenerator.dispose();
 
     const camera = new THREE.PerspectiveCamera(
-      54,
-      window.innerWidth / window.innerHeight,
+      initAspect < 0.75 ? 66 : initAspect < 1.0 ? 60 : 54,
+      initAspect,
       0.5,
-      600
+      700
     );
     camera.position.set(0, 18, 32);
 
-    // 3. Three-Point Warm Sunset Key + Cool Sky Hemisphere Lighting
-    const hemiLight = new THREE.HemisphereLight(0x93c5fd, 0x1e293b, 0.9);
+    // 3. Bright Daytime Sunlight Key + Cool Sky Hemisphere Lighting
+    const hemiLight = new THREE.HemisphereLight(0xe0f2fe, 0x15803d, 1.15);
     hemiLight.position.set(0, 80, 0);
     scene.add(hemiLight);
 
-    const sunKeyLight = new THREE.DirectionalLight(0xfde68a, 1.75);
-    sunKeyLight.position.set(75, 95, 65);
+    const sunKeyLight = new THREE.DirectionalLight(0xfffbeb, 1.85);
+    sunKeyLight.position.set(-65, 105, 55);
     sunKeyLight.castShadow = !isSoftwareGl;
     sunKeyLight.shadow.mapSize.width = 1024;
     sunKeyLight.shadow.mapSize.height = 1024;
@@ -596,20 +890,22 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
     sunKeyLight.shadow.normalBias = 0.02;
     scene.add(sunKeyLight);
 
-    const rimLight = new THREE.DirectionalLight(0x38bdf8, 0.6);
-    rimLight.position.set(-80, 45, -60);
+    const rimLight = new THREE.DirectionalLight(0x7dd3fc, 0.65);
+    rimLight.position.set(80, 50, -60);
     scene.add(rimLight);
 
     const maxAnisotropy = renderer.capabilities.getMaxAnisotropy();
     const cityTexture = createCityDistrictTexture(maxAnisotropy);
     const shadowTexture = createContactShadowTexture();
+    const skyConstellationTexture = createHalimConstellationSkyTexture(maxAnisotropy);
+    const wallCrestTexture = createMtsn14WallCrestTexture(maxAnisotropy);
 
     // ========================================================================
-    // 4. GTA SAN ANDREAS OPEN-WORLD DISTRICT GROUND & BUILDINGS
+    // 4. KAMPUS MTs NEGERI 14 JAKARTA TIMUR GROUND, SKY BACKDROP & BUILDINGS
     // ========================================================================
     const outerTerrain = new THREE.Mesh(
       new THREE.PlaneGeometry(700, 700),
-      new THREE.MeshStandardMaterial({ color: 0x0f1f17, roughness: 0.95, metalness: 0.05 })
+      new THREE.MeshStandardMaterial({ color: 0x14532d, roughness: 0.92, metalness: 0.05 })
     );
     outerTerrain.rotation.x = -Math.PI / 2;
     outerTerrain.position.y = -0.06;
@@ -619,13 +915,66 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
       new THREE.PlaneGeometry(240, 150),
       new THREE.MeshStandardMaterial({
         map: cityTexture,
-        roughness: 0.75,
-        metalness: 0.1,
+        roughness: 0.72,
+        metalness: 0.08,
       })
     );
     cityGround.rotation.x = -Math.PI / 2;
     cityGround.receiveShadow = !isSoftwareGl;
     scene.add(cityGround);
+
+    // Panoramic Constellation & Cumulus Clouds Sky Backdrop behind the Campus (Matching Reference Photo)
+    const skyBackdrop = new THREE.Mesh(
+      new THREE.CylinderGeometry(195, 195, 76, 40, 1, true, Math.PI * 0.65, Math.PI * 0.7),
+      new THREE.MeshBasicMaterial({
+        map: skyConstellationTexture,
+        side: THREE.BackSide,
+        fog: false,
+      })
+    );
+    skyBackdrop.position.set(0, 34, 0);
+    scene.add(skyBackdrop);
+
+    // 3D Commercial Airliner Plane soaring over MTsN 14 Halim Perdanakusuma with White Contrail
+    const halimAirlinerGroup = new THREE.Group();
+    const fuselage = new THREE.Mesh(
+      new THREE.CapsuleGeometry(0.95, 8.2, 8, 16),
+      new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.25, metalness: 0.3 })
+    );
+    fuselage.rotation.z = -Math.PI / 2;
+    halimAirlinerGroup.add(fuselage);
+
+    const airlinerWings = new THREE.Mesh(
+      new THREE.BoxGeometry(2.2, 0.16, 10.4),
+      new THREE.MeshStandardMaterial({ color: 0xf1f5f9, roughness: 0.3, metalness: 0.4 })
+    );
+    airlinerWings.position.set(0.2, -0.1, 0);
+    halimAirlinerGroup.add(airlinerWings);
+
+    const tailFin = new THREE.Mesh(
+      new THREE.BoxGeometry(1.8, 2.5, 0.2),
+      new THREE.MeshStandardMaterial({ color: 0x1d4ed8, roughness: 0.35 })
+    );
+    tailFin.position.set(-4.1, 1.2, 0);
+    halimAirlinerGroup.add(tailFin);
+
+    const contrailMesh = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.18, 1.35, 36, 10),
+      new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.72,
+        depthWrite: false,
+      })
+    );
+    contrailMesh.rotation.z = Math.PI / 2;
+    contrailMesh.position.set(-23, -0.1, 0);
+    halimAirlinerGroup.add(contrailMesh);
+
+    halimAirlinerGroup.position.set(18, 42, -55);
+    halimAirlinerGroup.rotation.z = 0.18;
+    halimAirlinerGroup.rotation.y = 0.22;
+    scene.add(halimAirlinerGroup);
 
     // Build 6 Iconic 3D School & City Buildings + Teacher NPC Mission Markers
     const teacherMarkerMeshes: THREE.Mesh[] = [];
@@ -885,10 +1234,10 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
     // 4A. TIANG BENDERA MERAH PUTIH & ROBLOX JUMP PADS DI LAPANGAN UPACARA MTsN 14
     // ========================================================================
     const ROBLOX_JUMP_PADS = [
-      { mapX: 980, mapY: 620 },
-      { mapX: 1420, mapY: 620 },
-      { mapX: 980, mapY: 940 },
-      { mapX: 1420, mapY: 940 },
+      { mapX: 760, mapY: 510 },
+      { mapX: 1640, mapY: 510 },
+      { mapX: 760, mapY: 990 },
+      { mapX: 1640, mapY: 990 },
     ];
     ROBLOX_JUMP_PADS.forEach((pad) => {
       const padGroup = new THREE.Group();
@@ -922,40 +1271,40 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
     });
 
     const flagpoleGroup = new THREE.Group();
-    flagpoleGroup.position.set(to3DX(1200), 0, to3DZ(585));
+    flagpoleGroup.position.set(to3DX(1200), 0, to3DZ(420));
     const flagpoleBase = new THREE.Mesh(
-      new THREE.BoxGeometry(3.6, 0.9, 3.6),
-      new THREE.MeshStandardMaterial({ color: 0xfef3c7, roughness: 0.6 })
+      new THREE.BoxGeometry(3.2, 0.7, 3.2),
+      new THREE.MeshStandardMaterial({ color: 0x14532d, roughness: 0.6 })
     );
-    flagpoleBase.position.y = 0.45;
+    flagpoleBase.position.y = 0.35;
     flagpoleGroup.add(flagpoleBase);
 
     const poleMesh = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.14, 0.2, 16, 12),
-      new THREE.MeshStandardMaterial({ color: 0xf8fafc, metalness: 0.6, roughness: 0.3 })
+      new THREE.CylinderGeometry(0.13, 0.18, 18.5, 12),
+      new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 0.4, roughness: 0.25 })
     );
-    poleMesh.position.y = 8;
+    poleMesh.position.y = 9.25;
     flagpoleGroup.add(poleMesh);
 
     // Bendera Merah Putih
     const flagRed = new THREE.Mesh(
       new THREE.BoxGeometry(3.8, 1.1, 0.12),
-      new THREE.MeshStandardMaterial({ color: 0xdc2626, emissive: 0x991b1b, emissiveIntensity: 0.3 })
+      new THREE.MeshStandardMaterial({ color: 0xdc2626, emissive: 0x991b1b, emissiveIntensity: 0.25 })
     );
-    flagRed.position.set(1.95, 15.2, 0);
+    flagRed.position.set(1.95, 17.8, 0);
     flagpoleGroup.add(flagRed);
 
     const flagWhite = new THREE.Mesh(
       new THREE.BoxGeometry(3.8, 1.1, 0.12),
       new THREE.MeshStandardMaterial({ color: 0xffffff })
     );
-    flagWhite.position.set(1.95, 14.1, 0);
+    flagWhite.position.set(1.95, 16.7, 0);
     flagpoleGroup.add(flagWhite);
     scene.add(flagpoleGroup);
 
     // Monumen Dirgantara / Siluet Pesawat TNI AU Halim Perdanakusuma di Dekat Gerbang Jl. Elang
     const jetGroup = new THREE.Group();
-    jetGroup.position.set(to3DX(940), 0, to3DZ(1165));
+    jetGroup.position.set(to3DX(980), 0, to3DZ(1320));
     const jetPedestal = new THREE.Mesh(
       new THREE.CylinderGeometry(1.4, 2.2, 4.5, 8),
       new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.5 })
@@ -990,7 +1339,10 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
     scene.add(jetGroup);
 
     // ========================================================================
-    // 4B. 6 GEDUNG UTAMA KAMPUS MTs NEGERI 14 JAKARTA TIMUR (HALIM)
+    // 4B. 6 GEDUNG UTAMA KAMPUS MTs NEGERI 14 JAKARTA TIMUR & MASJID AL - HUDA
+    // Sesuai Gambar Acuan: Dinding Hijau Muda (#7ccf6a), Lis/Pilar Hijau Tua (#14532d),
+    // Atap Genteng Merah Bata (#c2410c), serta Masjid Al - Huda dengan 2 Kubah Hijau Muda,
+    // Atap Limas Tumpang, dan Menara Masjid Kotak Hijau Muda!
     // ========================================================================
     TEACHER_POSTS.forEach((post) => {
       const bx = to3DX(post.mapX);
@@ -1000,102 +1352,247 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
       const bOffsetZ = post.mapY < 750 ? -14 : 14;
       bGroup.position.set(bx, 0, bz + bOffsetZ);
 
-      const bWidth = post.index === 0 ? 34 : 28;
-      const bHeight = post.index === 0 ? 14.5 : 11.5;
-      const bDepth = 14;
+      const bWidth = post.index === 0 ? 40 : 28;
+      const bHeight = post.index === 0 ? 13.5 : 11.2;
+      const bDepth = 14.5;
 
-      // Authentic Madrasah Negeri Emerald Green & Cream Facade
-      const wallColor = post.index === 2 ? 0x065f46 : 0x0f5132;
+      // Authentic MTsN 14 Light Pastel/Lime Green Facade (#7ccf6a) with Dark Forest Green Trim (#14532d)
+      const lightGreenMat = new THREE.MeshStandardMaterial({
+        color: 0x7ccf6a,
+        roughness: 0.52,
+        metalness: 0.08,
+      });
+      const darkGreenTrimMat = new THREE.MeshStandardMaterial({
+        color: 0x14532d,
+        roughness: 0.55,
+        metalness: 0.1,
+      });
+      const terracottaRoofMat = new THREE.MeshStandardMaterial({
+        color: 0xc2410c,
+        roughness: 0.58,
+        metalness: 0.08,
+      });
+
       const buildingMesh = new THREE.Mesh(
         new THREE.BoxGeometry(bWidth, bHeight, bDepth),
-        new THREE.MeshStandardMaterial({
-          color: wallColor,
-          roughness: 0.5,
-          metalness: 0.2,
-        })
+        lightGreenMat
       );
       buildingMesh.position.y = bHeight / 2;
       buildingMesh.castShadow = !isSoftwareGl;
       buildingMesh.receiveShadow = !isSoftwareGl;
       bGroup.add(buildingMesh);
 
-      // Cream Horizontal Madrasah Balcony Band (Selasar Kelas)
-      const creamBand = new THREE.Mesh(
-        new THREE.BoxGeometry(bWidth + 0.6, 1.4, bDepth + 0.6),
-        new THREE.MeshStandardMaterial({ color: 0xfef3c7, roughness: 0.4 })
+      // Dark Green Base Plinth & Balcony Fascia Band (Khas Gedung MTsN 14 pada foto)
+      const plinthBand = new THREE.Mesh(
+        new THREE.BoxGeometry(bWidth + 0.5, 1.1, bDepth + 0.5),
+        darkGreenTrimMat
       );
-      creamBand.position.y = bHeight * 0.5;
-      bGroup.add(creamBand);
+      plinthBand.position.y = 0.55;
+      bGroup.add(plinthBand);
+
+      const midBalconyBand = new THREE.Mesh(
+        new THREE.BoxGeometry(bWidth + 0.7, 1.35, bDepth + 0.7),
+        lightGreenMat
+      );
+      midBalconyBand.position.y = bHeight * 0.52;
+      bGroup.add(midBalconyBand);
+
+      // Vertical Dark-Green Pillars along the Front Facade
+      const pillarCount = post.index === 0 ? 5 : 4;
+      for (let p = 0; p < pillarCount; p++) {
+        const px = -bWidth / 2 + 2.2 + (p * (bWidth - 4.4)) / Math.max(1, pillarCount - 1);
+        const pillar = new THREE.Mesh(
+          new THREE.BoxGeometry(0.85, bHeight, bDepth + 0.45),
+          darkGreenTrimMat
+        );
+        pillar.position.set(px, bHeight / 2, 0);
+        bGroup.add(pillar);
+      }
+
+      if (post.index === 0) {
+        // GEDUNG UTAMA MTsN 14 JAKARTA TIMUR: Double Brown Doors + Kemenag Wall Emblem & Typography Plaque
+        const frontZ = bDepth / 2 + 0.22;
+        const doorMesh = new THREE.Mesh(
+          new THREE.BoxGeometry(3.4, 4.2, 0.2),
+          new THREE.MeshStandardMaterial({ color: 0x451a03, roughness: 0.6 })
+        );
+        doorMesh.position.set(0, 2.3, frontZ);
+        bGroup.add(doorMesh);
+
+        const wallPlaque = new THREE.Mesh(
+          new THREE.PlaneGeometry(14.5, 4.5),
+          new THREE.MeshBasicMaterial({ map: wallCrestTexture })
+        );
+        wallPlaque.position.set(0, bHeight * 0.54, frontZ + 0.16);
+        bGroup.add(wallPlaque);
+      }
 
       if (post.index === 2) {
-        // MASJID AL-IKHLAS MTsN 14 HALIM: Authentic Golden-Green Mosque Dome (Kubah) & Minaret
-        const domeMesh = new THREE.Mesh(
-          new THREE.SphereGeometry(6.2, 24, 16, 0, Math.PI * 2, 0, Math.PI / 2),
-          new THREE.MeshStandardMaterial({
-            color: 0x10b981,
-            emissive: 0x047857,
-            emissiveIntensity: 0.4,
-            metalness: 0.6,
-            roughness: 0.25,
-          })
-        );
-        domeMesh.position.y = bHeight;
-        bGroup.add(domeMesh);
+        // ====================================================================
+        // MASJID AL - HUDA MTsN 14 HALIM (SESUAI FOTO ACUAN):
+        // 1. Atap Limas Tumpang Genteng Merah Bata (2 Tingkat) + Mustaka
+        // 2. Dua Kubah Hijau Muda di Bagian Depan Serambi
+        // 3. Menara Masjid Kotak Hijau Muda Tinggi di Sisi Kiri Masjid
+        // ====================================================================
+        const frontZ = bDepth / 2;
 
-        const spireMesh = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.15, 0.35, 3.2, 8),
-          new THREE.MeshStandardMaterial({ color: 0xfbbf24, metalness: 0.8, roughness: 0.2 })
+        // Dark-green eaves cornice
+        const mosqueCornice = new THREE.Mesh(
+          new THREE.BoxGeometry(bWidth + 1.4, 0.9, bDepth + 1.4),
+          darkGreenTrimMat
         );
-        spireMesh.position.y = bHeight + 7.2;
-        bGroup.add(spireMesh);
+        mosqueCornice.position.y = bHeight + 0.45;
+        bGroup.add(mosqueCornice);
+
+        // Tier 1 Lower Pyramidal Terracotta Roof (Atap Tumpang Bawah)
+        const pyramidLower = new THREE.Mesh(
+          new THREE.ConeGeometry(bWidth * 0.56, 4.8, 4),
+          terracottaRoofMat
+        );
+        pyramidLower.rotation.y = Math.PI / 4;
+        pyramidLower.position.set(0, bHeight + 2.8, -0.5);
+        bGroup.add(pyramidLower);
+
+        // Tier 2 Upper Pyramidal Terracotta Roof (Atap Tumpang Puncak)
+        const pyramidUpper = new THREE.Mesh(
+          new THREE.ConeGeometry(bWidth * 0.34, 4.2, 4),
+          new THREE.MeshStandardMaterial({ color: 0x9a3412, roughness: 0.55 })
+        );
+        pyramidUpper.rotation.y = Math.PI / 4;
+        pyramidUpper.position.set(0, bHeight + 6.4, -0.5);
+        bGroup.add(pyramidUpper);
+
+        // Roof Peak Finial Spire (Mustaka Puncak Atap Limas)
+        const peakSpire = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.1, 0.25, 2.8, 8),
+          new THREE.MeshStandardMaterial({ color: 0xfef08a, metalness: 0.85, roughness: 0.2 })
+        );
+        peakSpire.position.set(0, bHeight + 9.4, -0.5);
+        bGroup.add(peakSpire);
+
+        // TWO Characteristic Light-Green Small Front Domes (Dua Kubah Hijau Muda di Depan Serambi)
+        const frontDomeMat = new THREE.MeshStandardMaterial({
+          color: 0xa3e635,
+          emissive: 0x4d7c0f,
+          emissiveIntensity: 0.18,
+          roughness: 0.3,
+          metalness: 0.2,
+        });
+        [-4.2, 4.2].forEach((dx) => {
+          const smallDome = new THREE.Mesh(
+            new THREE.SphereGeometry(2.35, 20, 14, 0, Math.PI * 2, 0, Math.PI * 0.58),
+            frontDomeMat
+          );
+          smallDome.position.set(dx, bHeight + 0.9, frontZ - 1.8);
+          bGroup.add(smallDome);
+
+          const domeSpire = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.06, 0.14, 1.5, 8),
+            new THREE.MeshStandardMaterial({ color: 0xfef08a, metalness: 0.8 })
+          );
+          domeSpire.position.set(dx, bHeight + 3.6, frontZ - 1.8);
+          bGroup.add(domeSpire);
+        });
+
+        // Tall Square Light-Green Minaret Tower (Menara Masjid Al - Huda di Sisi Kiri Masjid)
+        const minaretGroup = new THREE.Group();
+        minaretGroup.position.set(-bWidth / 2 - 4.2, 0, -1.5);
+
+        const minaretShaft = new THREE.Mesh(
+          new THREE.BoxGeometry(4.4, 21.5, 4.4),
+          new THREE.MeshStandardMaterial({ color: 0xbbf7d0, roughness: 0.45 })
+        );
+        minaretShaft.position.y = 10.75;
+        minaretGroup.add(minaretShaft);
+
+        const minaretBalcony = new THREE.Mesh(
+          new THREE.BoxGeometry(5.4, 0.9, 5.4),
+          darkGreenTrimMat
+        );
+        minaretBalcony.position.y = 18.2;
+        minaretGroup.add(minaretBalcony);
+
+        const minaretTopCrown = new THREE.Mesh(
+          new THREE.BoxGeometry(3.4, 3.2, 3.4),
+          lightGreenMat
+        );
+        minaretTopCrown.position.y = 22.4;
+        minaretGroup.add(minaretTopCrown);
+
+        const minaretDome = new THREE.Mesh(
+          new THREE.SphereGeometry(1.7, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.55),
+          frontDomeMat
+        );
+        minaretDome.position.y = 24.0;
+        minaretGroup.add(minaretDome);
+
+        const minaretSpire = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.08, 0.18, 2.4, 8),
+          new THREE.MeshStandardMaterial({ color: 0xfef08a, metalness: 0.85 })
+        );
+        minaretSpire.position.y = 26.2;
+        minaretGroup.add(minaretSpire);
+
+        bGroup.add(minaretGroup);
       } else {
-        // Traditional Indonesian School Terracotta Pitched Roof (Atap Genteng Merah Bata)
-        const roofTrim = new THREE.Mesh(
-          new THREE.BoxGeometry(bWidth + 1.6, 1.2, bDepth + 1.6),
+        // Traditional Indonesian Madrasah Terracotta Pitched Roof (Atap Genteng Merah Bata) with Dark Green Fascia Trim
+        const roofFascia = new THREE.Mesh(
+          new THREE.BoxGeometry(bWidth + 2.0, 0.95, bDepth + 2.0),
+          darkGreenTrimMat
+        );
+        roofFascia.position.y = bHeight + 0.48;
+        bGroup.add(roofFascia);
+
+        const roofLower = new THREE.Mesh(
+          new THREE.BoxGeometry(bWidth + 1.2, 1.8, bDepth + 1.0),
+          terracottaRoofMat
+        );
+        roofLower.position.y = bHeight + 1.65;
+        bGroup.add(roofLower);
+
+        const roofRidge = new THREE.Mesh(
+          new THREE.BoxGeometry(bWidth - 3.2, 2.4, bDepth - 3.6),
           new THREE.MeshStandardMaterial({
             color: 0x9a3412,
             roughness: 0.6,
           })
         );
-        roofTrim.position.y = bHeight + 0.6;
-        bGroup.add(roofTrim);
-
-        const roofUpper = new THREE.Mesh(
-          new THREE.BoxGeometry(bWidth - 4, 2.2, bDepth - 3),
-          new THREE.MeshStandardMaterial({
-            color: 0x7c2d12,
-            roughness: 0.65,
-          })
-        );
-        roofUpper.position.y = bHeight + 2.1;
-        bGroup.add(roofUpper);
+        roofRidge.position.y = bHeight + 3.4;
+        bGroup.add(roofRidge);
       }
 
-      // Illuminated Classroom / Lab Windows Strip
+      // Classroom / Lab Windows Strip with Dark Green Frames
       const winMesh = new THREE.Mesh(
-        new THREE.BoxGeometry(bWidth - 4, 2.4, bDepth + 0.3),
+        new THREE.BoxGeometry(bWidth - 4.5, 2.2, bDepth + 0.25),
         new THREE.MeshStandardMaterial({
-          color: 0xbae6fd,
-          emissive: 0x38bdf8,
-          emissiveIntensity: 0.45,
+          color: 0x1e293b,
+          emissive: 0x0ea5e9,
+          emissiveIntensity: 0.22,
           roughness: 0.2,
+          metalness: 0.5,
         })
       );
-      winMesh.position.y = bHeight * 0.74;
+      winMesh.position.y = bHeight * 0.76;
       bGroup.add(winMesh);
 
       // 3D Signboard Above Building
       const signSprite = createBuildingSignboard(
         post.buildingName,
-        'KAMPUS MTsN 14 JAKARTA TIMUR · HALIM PK',
-        '#fbbf24'
+        post.index === 2
+          ? 'MASJID AL - HUDA · KAMPUS MTsN 14 JAKARTA TIMUR'
+          : 'KAMPUS MTsN 14 JAKARTA TIMUR · HALIM PK',
+        post.index === 2 ? '#4ade80' : '#fbbf24'
       );
-      signSprite.position.set(0, bHeight + 5.6, 0);
+      signSprite.position.set(0, post.index === 2 ? bHeight + 11.5 : bHeight + 6.8, 0);
       bGroup.add(signSprite);
 
       scene.add(bGroup);
 
-      // Teacher NPC (Pak Azhary Mardhani, S.Kom) standing in front of the building inside a GTA Mission Cylinder!
+      // Teacher NPC (Pak Azhary Mardhani, S.Kom) standing on the front plaza facing the walkway!
+      const teacherMapY = post.mapY < 750 ? post.mapY + 110 : post.mapY - 110;
+      const teacherBx = to3DX(post.mapX);
+      const teacherBz = to3DZ(teacherMapY);
+
       const teacherRig = buildHumanoidCharacter(
         {
           id: 'teacher_azhary',
@@ -1113,7 +1610,7 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
         '#fbbf24',
         true
       );
-      teacherRig.group.position.set(bx, 0, bz);
+      teacherRig.group.position.set(teacherBx, 0, teacherBz);
       if (post.mapY > 750) {
         teacherRig.group.rotation.y = Math.PI;
       }
@@ -1129,7 +1626,7 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
         depthWrite: false,
       });
       const markerCylinder = new THREE.Mesh(markerGeo, markerMat);
-      markerCylinder.position.set(bx, 2.75, bz);
+      markerCylinder.position.set(teacherBx, 2.75, teacherBz);
       scene.add(markerCylinder);
       teacherMarkerMeshes.push(markerCylinder);
     });
@@ -1152,8 +1649,8 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
 
     const itemPickups: QuestHardwarePickup[] = HARDWARE_ITEM_NAMES.map((itemName, idx) => {
       const angle = (idx / HARDWARE_ITEM_NAMES.length) * Math.PI * 2;
-      const radX = idx % 2 === 0 ? 360 : 620;
-      const radY = idx % 2 === 0 ? 220 : 360;
+      const radX = idx % 2 === 0 ? 340 : 560;
+      const radY = idx % 2 === 0 ? 220 : 340;
       const mx = WORLD_WIDTH / 2 + Math.cos(angle) * radX;
       const my = WORLD_HEIGHT / 2 + Math.sin(angle) * radY;
 
@@ -1280,6 +1777,7 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
     let localFacingAngle = Math.PI;
     let localWalkPhase = 0;
     let lastNearbyTeacherIdx: number | null = null;
+    let lastNearbyEntrancePostIdx: number | null = null;
     let lastNearbyVersusId: string | null = null;
     let lastTeleportSeq = propsRef.current.teleportCommand?.seq || 0;
     let wsEmitCooldown = 0;
@@ -1388,11 +1886,24 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
     renderer.domElement.addEventListener('contextmenu', handleContextMenu);
 
     const handleResize = () => {
-      camera.aspect = window.innerWidth / window.innerHeight;
+      const w =
+        container.clientWidth ||
+        (window.visualViewport ? Math.round(window.visualViewport.width) : window.innerWidth);
+      const h =
+        container.clientHeight ||
+        (window.visualViewport ? Math.round(window.visualViewport.height) : window.innerHeight);
+      const aspect = w / Math.max(1, h);
+      camera.aspect = aspect;
+      camera.fov = aspect < 0.75 ? 66 : aspect < 1.0 ? 60 : 54;
       camera.updateProjectionMatrix();
-      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setSize(w, h);
     };
     window.addEventListener('resize', handleResize);
+    window.addEventListener('orientationchange', handleResize);
+    window.visualViewport?.addEventListener('resize', handleResize);
+    const resizeObserver =
+      typeof ResizeObserver !== 'undefined' ? new ResizeObserver(handleResize) : null;
+    resizeObserver?.observe(container);
 
     if (!isSoftwareGl) {
       renderer.compile(scene, camera);
@@ -1426,12 +1937,14 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
       const elapsed = clock.getElapsedTime();
       const currentProps = propsRef.current;
 
-      // Animate Teacher Mission Cylinders
+      // Animate Teacher Mission Cylinders & Soaring Halim Airliner
       teacherMarkerMeshes.forEach((cyl, idx) => {
         cyl.rotation.y = elapsed * 0.8 + idx;
         const s = 1 + Math.sin(elapsed * 3 + idx) * 0.06;
         cyl.scale.set(s, 1, s);
       });
+      const planeCycle = ((elapsed * 6.5) % 180) - 90;
+      halimAirlinerGroup.position.set(planeCycle, 40 + (planeCycle + 90) * 0.08, -58);
 
       // ======================================================================
       // UPDATE LOCAL HUMANOID IN GTA OPEN-WORLD DISTRICT
@@ -1553,6 +2066,27 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
         if (postIdx !== lastNearbyTeacherIdx) {
           lastNearbyTeacherIdx = postIdx;
           currentProps.onNearbyTeacherPostChange(nearestPost);
+        }
+
+        // 1B. Check Proximity to 6 Building Entrance Teleport Pads
+        let nearestEntrancePost: TeacherPostLocation | null = null;
+        for (const post of TEACHER_POSTS) {
+          const doorMapX = post.mapX;
+          const doorMapY = post.mapY < 750 ? post.mapY + 110 : post.mapY - 110;
+          if (Math.hypot(localMapX - doorMapX, localMapY - doorMapY) <= 95) {
+            nearestEntrancePost = post;
+            break;
+          }
+        }
+        const entranceIdx = nearestEntrancePost ? nearestEntrancePost.index : null;
+        if (entranceIdx !== lastNearbyEntrancePostIdx) {
+          lastNearbyEntrancePostIdx = entranceIdx;
+          currentProps.onNearbyBuildingEntranceChange?.(nearestEntrancePost);
+        }
+
+        if ((justPressedKeys.has('KeyE') || justPressedKeys.has('KeyF')) && nearestEntrancePost) {
+          soundEngine.playClick();
+          currentProps.onEnterBuildingInterior?.(nearestEntrancePost);
         }
 
         // 2. Check Proximity to Other Students on the Map (Versus 1v1 Trigger!)
@@ -1830,11 +2364,18 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
       // ======================================================================
       if (!currentProps.joinedRoom) {
         const orbitAngle = elapsed * 0.2;
-        _vec3A.set(Math.cos(orbitAngle) * 76, 34, Math.sin(orbitAngle) * 76);
+        const aspectScale = camera.aspect < 0.85 ? 1.25 : 1;
+        _vec3A.set(
+          Math.cos(orbitAngle) * 76 * aspectScale,
+          34 * aspectScale,
+          Math.sin(orbitAngle) * 76 * aspectScale
+        );
         camera.position.lerp(_vec3A, Math.min(1, dt * 3));
         camera.lookAt(0, 4, 0);
       } else if (currentProps.cameraMode === 'FULL_MAP') {
-        _vec3A.set(0, 140, 88);
+        const aspect = camera.aspect || 1;
+        const mapZoomScale = aspect < 1 ? Math.min(2.15, 1.18 / Math.max(0.42, aspect)) : 1;
+        _vec3A.set(0, 140 * mapZoomScale, 88 * mapZoomScale);
         camera.position.x = THREE.MathUtils.damp(camera.position.x, _vec3A.x, 6, dt);
         camera.position.y = THREE.MathUtils.damp(camera.position.y, _vec3A.y, 6, dt);
         camera.position.z = THREE.MathUtils.damp(camera.position.z, _vec3A.z, 6, dt);
@@ -1842,9 +2383,10 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
       } else {
         const px = to3DX(localMapX);
         const pz = to3DZ(localMapY);
-        const camOffsetX = Math.sin(cameraYaw) * Math.cos(cameraPitch) * cameraDist;
-        const camOffsetY = Math.sin(cameraPitch) * cameraDist + 3.6;
-        const camOffsetZ = Math.cos(cameraYaw) * Math.cos(cameraPitch) * cameraDist;
+        const effectiveDist = camera.aspect < 0.75 ? cameraDist * 1.14 : cameraDist;
+        const camOffsetX = Math.sin(cameraYaw) * Math.cos(cameraPitch) * effectiveDist;
+        const camOffsetY = Math.sin(cameraPitch) * effectiveDist + 3.6;
+        const camOffsetZ = Math.cos(cameraYaw) * Math.cos(cameraPitch) * effectiveDist;
 
         camera.position.x = THREE.MathUtils.damp(camera.position.x, px + camOffsetX, 10, dt);
         camera.position.y = THREE.MathUtils.damp(
@@ -2020,13 +2562,20 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
       renderer.domElement.removeEventListener('wheel', handleWheel);
       renderer.domElement.removeEventListener('contextmenu', handleContextMenu);
       window.removeEventListener('resize', handleResize);
+      window.removeEventListener('orientationchange', handleResize);
+      window.visualViewport?.removeEventListener('resize', handleResize);
+      resizeObserver?.disconnect();
       cityTexture.dispose();
       shadowTexture.dispose();
+      skyConstellationTexture.dispose();
+      wallCrestTexture.dispose();
       renderer.dispose();
     };
   }, []);
 
-  const MAX_JOYSTICK_RADIUS = 38;
+  const maxJoystickRadius = vp.joystickRadiusPx;
+  const innerRingSize = Math.round(vp.joystickSizePx * 0.68);
+  const knobSize = Math.round(vp.joystickSizePx * 0.44);
 
   const handleJoystickStart = (e: React.TouchEvent<HTMLDivElement>) => {
     e.stopPropagation();
@@ -2041,14 +2590,14 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
     const dx = touch.clientX - cx;
     const dy = touch.clientY - cy;
     const dist = Math.hypot(dx, dy);
-    const clampedDist = Math.min(dist, MAX_JOYSTICK_RADIUS);
+    const clampedDist = Math.min(dist, maxJoystickRadius);
     const angle = Math.atan2(dy, dx);
     const kx = Math.cos(angle) * clampedDist;
     const ky = Math.sin(angle) * clampedDist;
     setJoystickKnob({ x: kx, y: ky });
     touchStickRef.current = {
-      x: kx / MAX_JOYSTICK_RADIUS,
-      y: ky / MAX_JOYSTICK_RADIUS,
+      x: kx / Math.max(1, maxJoystickRadius),
+      y: ky / Math.max(1, maxJoystickRadius),
     };
   };
 
@@ -2061,14 +2610,14 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
         const dx = t.clientX - joystickCenterRef.current.x;
         const dy = t.clientY - joystickCenterRef.current.y;
         const dist = Math.hypot(dx, dy);
-        const clampedDist = Math.min(dist, MAX_JOYSTICK_RADIUS);
+        const clampedDist = Math.min(dist, maxJoystickRadius);
         const angle = Math.atan2(dy, dx);
         const kx = Math.cos(angle) * clampedDist;
         const ky = Math.sin(angle) * clampedDist;
         setJoystickKnob({ x: kx, y: ky });
         touchStickRef.current = {
-          x: kx / MAX_JOYSTICK_RADIUS,
-          y: ky / MAX_JOYSTICK_RADIUS,
+          x: kx / Math.max(1, maxJoystickRadius),
+          y: ky / Math.max(1, maxJoystickRadius),
         };
         break;
       }
@@ -2088,28 +2637,47 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 w-screen h-screen overflow-hidden bg-slate-950 touch-none">
+    <div className="fixed inset-0 w-full h-full overflow-hidden bg-slate-950 touch-none">
       <div ref={mountRef} className="w-full h-full touch-none" />
 
-      {/* Adaptive GTA San Andreas Circular Radar Mini-Map:
-          - Handphone Portrait & Landscape (<1024px): Positioned at top-right below compact status bar (62x62px in landscape, 76x76px in portrait) so it NEVER overlaps the bottom-left Virtual Movement Joystick!
-          - Desktop (>=1024px / lg:, where virtual joystick is hidden): 148x148px in bottom-left */}
+      {/* Resolution-Adaptive GTA San Andreas Circular Radar Mini-Map:
+          - Handphone/Tablet (vp.isMobileLayout): Positioned at top-right below compact status bar, dynamically scaled to vp.radarSizePx so it NEVER overlaps the bottom-left Virtual Movement Joystick!
+          - Desktop (!vp.isMobileLayout): Positioned at bottom-left */}
       {joinedRoom && (
-        <div className="fixed top-[48px] right-2.5 lg:top-auto lg:right-auto lg:bottom-5 lg:left-5 z-20 pointer-events-none flex flex-col items-center gap-1">
+        <div
+          className="fixed z-20 pointer-events-none flex flex-col items-center gap-1"
+          style={
+            vp.isMobileLayout
+              ? {
+                  top: vp.isCompactHeight ? 42 : 48,
+                  right: 10,
+                }
+              : {
+                  bottom: 20,
+                  left: 20,
+                }
+          }
+        >
           <canvas
             ref={radarCanvasRef}
             width={148}
             height={148}
-            className="block w-[76px] h-[76px] max-lg:landscape:w-[60px] max-lg:landscape:h-[60px] lg:w-[148px] lg:h-[148px] rounded-full shadow-2xl"
+            className="block rounded-full shadow-2xl"
+            style={{
+              width: `${vp.radarSizePx}px`,
+              height: `${vp.radarSizePx}px`,
+            }}
           />
-          <span className="hidden lg:inline-block text-[10px] font-mono text-slate-400 bg-slate-900/90 px-2.5 py-0.5 rounded border border-slate-800">
-            G: Pos Guru · ■: Barang · ●: Siswa
-          </span>
+          {!vp.isMobileLayout && (
+            <span className="inline-block text-[10px] font-mono text-slate-400 bg-slate-900/90 px-2.5 py-0.5 rounded border border-slate-800">
+              G: Pos Guru · ■: Barang · ●: Siswa
+            </span>
+          )}
         </div>
       )}
 
-      {/* MOBILE / HANDPHONE VIRTUAL ANALOG JOYSTICK & JUMP/SPRINT PAD (Visible on Handphone & Tablet <1024px) */}
-      {joinedRoom && (
+      {/* RESOLUTION-ADAPTIVE VIRTUAL ANALOG JOYSTICK & JUMP/DASH PAD */}
+      {joinedRoom && vp.isMobileLayout && (
         <>
           {/* Left Thumb Virtual Analog Joystick */}
           <div
@@ -2117,26 +2685,46 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
             onTouchMove={handleJoystickMove}
             onTouchEnd={handleJoystickEnd}
             onTouchCancel={handleJoystickEnd}
-            className="fixed bottom-14 left-3.5 max-lg:landscape:bottom-10 max-lg:landscape:left-3 z-20 lg:hidden w-24 h-24 max-lg:landscape:w-[84px] max-lg:landscape:h-[84px] rounded-full bg-slate-900/80 border-2 border-slate-600/90 shadow-2xl flex items-center justify-center touch-none select-none"
+            style={{
+              width: `${vp.joystickSizePx}px`,
+              height: `${vp.joystickSizePx}px`,
+              bottom: vp.isCompactHeight ? 10 : 48,
+              left: vp.isCompactHeight ? 10 : 12,
+            }}
+            className="fixed z-20 rounded-full bg-slate-900/80 border-2 border-slate-600/90 shadow-2xl flex items-center justify-center touch-none select-none"
             aria-label="Joystick Virtual Jalan 3D"
           >
-            <div className="w-16 h-16 max-lg:landscape:w-14 max-lg:landscape:h-14 rounded-full border border-slate-700/70 flex items-center justify-center pointer-events-none">
-              <span className="text-[9px] font-mono font-bold text-slate-500 uppercase">
+            <div
+              style={{
+                width: `${innerRingSize}px`,
+                height: `${innerRingSize}px`,
+              }}
+              className="rounded-full border border-slate-700/70 flex items-center justify-center pointer-events-none"
+            >
+              <span className="text-[8px] sm:text-[9px] font-mono font-bold text-slate-500 uppercase">
                 JALAN
               </span>
             </div>
             <div
-              className="absolute w-11 h-11 max-lg:landscape:w-10 max-lg:landscape:h-10 rounded-full bg-emerald-500/90 border-2 border-white shadow-lg pointer-events-none flex items-center justify-center"
+              className="absolute rounded-full bg-emerald-500/90 border-2 border-white shadow-lg pointer-events-none flex items-center justify-center"
               style={{
+                width: `${knobSize}px`,
+                height: `${knobSize}px`,
                 transform: `translate(${joystickKnob.x}px, ${joystickKnob.y}px)`,
               }}
             >
-              <div className="w-2.5 h-2.5 rounded-full bg-white/90" />
+              <div className="w-2 h-2 rounded-full bg-white/90" />
             </div>
           </div>
 
           {/* Right Thumb Jump & Dash Action Button */}
-          <div className="fixed bottom-16 right-3.5 max-lg:landscape:bottom-11 max-lg:landscape:right-3 z-20 lg:hidden flex flex-col items-center gap-2">
+          <div
+            style={{
+              bottom: vp.isCompactHeight ? 12 : 52,
+              right: vp.isCompactHeight ? 10 : 12,
+            }}
+            className="fixed z-20 flex flex-col items-center gap-2"
+          >
             <button
               type="button"
               onTouchStart={(e) => {
@@ -2146,10 +2734,14 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
               onClick={() => {
                 mobileJumpQueuedRef.current = true;
               }}
-              className="w-15 h-15 max-lg:landscape:w-13 max-lg:landscape:h-13 rounded-full bg-sky-600/90 active:bg-sky-400 border-2 border-sky-300 shadow-2xl flex flex-col items-center justify-center text-white font-extrabold text-[10px] max-lg:landscape:text-[9px] font-mono leading-tight touch-none select-none"
+              style={{
+                width: `${vp.jumpBtnSizePx}px`,
+                height: `${vp.jumpBtnSizePx}px`,
+              }}
+              className="rounded-full bg-sky-600/90 active:bg-sky-400 border-2 border-sky-300 shadow-2xl flex flex-col items-center justify-center text-white font-extrabold text-[9px] font-mono leading-tight touch-none select-none"
             >
               <span>LOMPAT</span>
-              <span className="text-[8px] text-sky-200">DASH</span>
+              <span className="text-[7.5px] text-sky-200">DASH</span>
             </button>
           </div>
         </>

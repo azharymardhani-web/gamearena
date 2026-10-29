@@ -37,6 +37,19 @@
   overscroll-behavior-x: contain;
 }
 
+button, a, input, select, textarea {
+  touch-action: manipulation;
+}
+
+/* Prevent iOS Safari & Android Chrome from auto-zooming the page when tapping inputs on phones */
+@media screen and (max-width: 1024px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
 .tabular-nums {
   font-variant-numeric: tabular-nums;
 }

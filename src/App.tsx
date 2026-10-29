@@ -14,6 +14,7 @@ import {
 } from './components/CyberArenaCanvas';
 import { MaterialManagerModal } from './components/MaterialManagerModal';
 import { ItemAnalysisView } from './components/ItemAnalysisView';
+import { BuildingInteriorModal } from './components/BuildingInteriorModal';
 import {
   TeacherQuestModal,
   VersusDuelModal,
@@ -21,6 +22,7 @@ import {
 } from './components/VersusAndTeacherModals';
 import { soundEngine } from './utils/soundEngine';
 import { CloudArenaBridge } from './utils/cloudArenaBridge';
+import { useDeviceViewport } from './utils/useDeviceViewport';
 import {
   Volume2,
   VolumeX,
@@ -101,7 +103,8 @@ const WINDOW_RUNTIME_ID = `${Date.now().toString(36).slice(-4)}${Math.random()
 
 const QUICK_CHAT_PHRASES = [
   'Halo semua! 👋',
-  'Kumpul di Lapangan Upacara!',
+  'Kumpul di Lapangan Hijau MTsN 14!',
+  'Ayo ke Masjid Al - Huda! 🕌',
   'Ayo Duel Versus 1v1! ⚔️',
   'Pak Azhary ada di Lab Komputer!',
   'GGWP Teman MTsN 14! 🔥',
@@ -235,6 +238,7 @@ function mergePlayersPreservingFreshMovement(
 }
 
 export default function App() {
+  const vp = useDeviceViewport();
   const initialSession = useMemo(() => loadSavedSession(), []);
 
   const [entryTab, setEntryTab] = useState<'STUDENT' | 'TEACHER'>(
@@ -355,6 +359,8 @@ export default function App() {
   // Proximity Interactions on the 3D Map
   const [nearbyTeacherPost, setNearbyTeacherPost] = useState<TeacherPostLocation | null>(null);
   const [nearbyVersusTarget, setNearbyVersusTarget] = useState<MapPlayerEntity | null>(null);
+  const [nearbyEntranceBuilding, setNearbyEntranceBuilding] = useState<TeacherPostLocation | null>(null);
+  const [activeBuildingInterior, setActiveBuildingInterior] = useState<TeacherPostLocation | null>(null);
   const [activeTeacherModalIndex, setActiveTeacherModalIndex] = useState<number | null>(null);
   const [pickupBanner, setPickupBanner] = useState<{ itemName: string; mpGain: number } | null>(
     null
@@ -1831,6 +1837,8 @@ export default function App() {
         onEmitLocalMove={handleEmitLocalMove}
         onNearbyTeacherPostChange={setNearbyTeacherPost}
         onNearbyVersusTargetChange={setNearbyVersusTarget}
+        onNearbyBuildingEntranceChange={setNearbyEntranceBuilding}
+        onEnterBuildingInterior={setActiveBuildingInterior}
         onItemPickedUpToast={handleItemPickedUpToast}
         onLocalHudSync={setLocalHud}
       />
@@ -1852,8 +1860,8 @@ export default function App() {
                 onClick={() => setIsMaterialModalOpen(true)}
                 className="flex items-center gap-1 px-2.5 sm:px-3.5 py-1.5 sm:py-2 text-[11px] sm:text-xs font-semibold text-slate-100 bg-slate-900/95 hover:bg-slate-800 border border-slate-700 rounded-lg transition-colors whitespace-nowrap shrink-0"
               >
-                <BookOpen className="w-3.5 h-3.5 text-sky-400" />
-                <span>Materi & Soal ({questions.length})</span>
+                <BookOpen className="w-3.5 h-3.5 text-amber-400" />
+                <span>Bank Soal ({questions.length})</span>
               </button>
 
               <button
@@ -2324,113 +2332,119 @@ export default function App() {
             </div>
           )}
 
-          {/* 3A. COMPACT MOBILE TOP HUD BAR (Handphone Portrait & Landscape <1024px) */}
-          <div className="fixed top-2 left-2 right-2 z-20 lg:hidden pointer-events-none flex flex-col gap-1.5">
-            <div className="bg-slate-900/95 border border-slate-700/90 rounded-xl px-2 py-1.5 shadow-xl pointer-events-auto flex items-center justify-between gap-1">
-              {/* Left: Room PIN, Online Students Drawer Toggle, & Chat Button */}
-              <div className="flex items-center gap-1 min-w-0">
-                <button
-                  onClick={handleCopyRoomPin}
-                  className="px-2 py-1 rounded-lg bg-slate-950 border border-amber-500/60 text-[10px] font-mono font-extrabold text-amber-400 shrink-0"
-                >
-                  {activePin}
-                </button>
-                <button
-                  onClick={() => setIsMobilePeersOpen((prev) => !prev)}
-                  className="flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-950/90 border border-emerald-600/70 text-[10px] font-bold text-emerald-300 shrink-0"
-                >
-                  <Users className="w-3 h-3" />
-                  <span>{onlineClassmates.length + 1}</span>
-                  <ChevronDown className="w-3 h-3" />
-                </button>
-                <button
-                  onClick={() => setIsChatOpen((prev) => !prev)}
-                  className="relative flex items-center gap-1 px-2 py-1 rounded-lg bg-sky-950/90 border border-sky-500/70 text-[10px] font-bold text-sky-300 shrink-0"
-                >
-                  <MessageSquare className="w-3 h-3" />
-                  <span>Chat</span>
-                  {unreadChatCount > 0 && (
-                    <span className="px-1 rounded-full bg-rose-500 text-white text-[9px] font-mono font-extrabold">
-                      {unreadChatCount}
-                    </span>
-                  )}
-                </button>
-              </div>
-
-              {/* Right: Compact Score, MP & Question Counter */}
-              <div className="flex items-center gap-1 font-mono tabular-nums text-[10px] shrink-0">
-                <span className="font-extrabold text-emerald-400">${displayedScore}</span>
-                <span className="px-1.5 py-0.5 rounded bg-emerald-950 border border-emerald-700 text-emerald-300 font-bold">
-                  {displayedMp}MP
-                </span>
-                <span className="px-1.5 py-0.5 rounded bg-sky-950 border border-sky-700 text-sky-300 font-bold">
-                  {answeredQuestionIds.size}/{activeQuestions.length}
-                </span>
-              </div>
-            </div>
-
-            {/* Expandable Mobile Classmates Teleport & Versus Invite Drawer */}
-            {isMobilePeersOpen && (
-              <div className="bg-slate-900/95 border border-emerald-500/80 rounded-xl p-2.5 shadow-2xl pointer-events-auto space-y-1.5 mr-24">
-                <div className="flex items-center justify-between text-[10px] font-mono text-emerald-400 font-bold">
-                  <span>TEMAN SEKELAS ONLINE ({onlineClassmates.length}):</span>
+          {/* 3A. COMPACT MOBILE TOP HUD BAR (Adapts dynamically to any Handphone Portrait & Landscape resolution) */}
+          {vp.isMobileLayout && (
+            <div className="fixed top-1.5 left-2 right-2 z-20 pointer-events-none flex flex-col gap-1">
+              <div className="bg-slate-900/95 border border-slate-700/90 rounded-xl px-2 py-1 sm:py-1.5 shadow-xl pointer-events-auto flex items-center justify-between gap-1">
+                {/* Left: Room PIN, Online Students Drawer Toggle, & Chat Button */}
+                <div className="flex items-center gap-1 min-w-0">
                   <button
-                    onClick={() => {
-                      handleTeleportToPosition(1200, 780);
-                      setIsMobilePeersOpen(false);
-                    }}
-                    className="px-2 py-0.5 rounded bg-sky-900 text-sky-200 text-[10px]"
+                    onClick={handleCopyRoomPin}
+                    className="px-1.5 sm:px-2 py-1 rounded-lg bg-slate-950 border border-amber-500/60 text-[10px] font-mono font-extrabold text-amber-400 shrink-0"
                   >
-                    Ke Lapangan Upacara
+                    {activePin}
+                  </button>
+                  <button
+                    onClick={() => setIsMobilePeersOpen((prev) => !prev)}
+                    className="flex items-center gap-1 px-1.5 sm:px-2 py-1 rounded-lg bg-emerald-950/90 border border-emerald-600/70 text-[10px] font-bold text-emerald-300 shrink-0"
+                  >
+                    <Users className="w-3 h-3" />
+                    <span>{onlineClassmates.length + 1}</span>
+                    <ChevronDown className="w-3 h-3" />
+                  </button>
+                  <button
+                    onClick={() => setIsChatOpen((prev) => !prev)}
+                    className="relative flex items-center gap-1 px-1.5 sm:px-2 py-1 rounded-lg bg-sky-950/90 border border-sky-500/70 text-[10px] font-bold text-sky-300 shrink-0"
+                  >
+                    <MessageSquare className="w-3 h-3" />
+                    <span>Chat</span>
+                    {unreadChatCount > 0 && (
+                      <span className="px-1 rounded-full bg-rose-500 text-white text-[9px] font-mono font-extrabold">
+                        {unreadChatCount}
+                      </span>
+                    )}
                   </button>
                 </div>
-                {onlineClassmates.length > 0 ? (
-                  <div className="flex flex-col gap-1.5 max-h-32 overflow-y-auto">
-                    {onlineClassmates.map((peer) => (
-                      <div
-                        key={peer.id}
-                        className="flex items-center justify-between gap-1.5 px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-lg"
-                      >
-                        <div className="text-[11px] font-bold text-slate-100 truncate">
-                          {peer.name}{' '}
-                          <span className="text-[10px] text-slate-400">({peer.studentClass})</span>
-                        </div>
-                        <div className="flex items-center gap-1 shrink-0">
-                          <button
-                            onClick={() => {
-                              handleTeleportToPosition(peer.x + 28, peer.y + 18);
-                              setIsMobilePeersOpen(false);
-                            }}
-                            className="px-2 py-1 text-[10px] font-bold text-emerald-300 bg-emerald-950 border border-emerald-600/70 rounded"
-                          >
-                            Hampiri
-                          </button>
-                          <button
-                            onClick={() => {
-                              handleSendVersusInvite(peer);
-                              setIsMobilePeersOpen(false);
-                            }}
-                            className="px-2 py-1 text-[10px] font-bold text-white bg-rose-600 rounded"
-                          >
-                            ⚔️ Duel
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-[11px] text-slate-300">
-                    Ajak teman sekelas masuk dengan Kode Room <strong>{activePin}</strong> untuk
-                    bertemu & Duel Versus 1v1!
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
 
-          {/* 3B. DESKTOP TOP-LEFT & TOP-RIGHT HUD (Hidden on Handphone Portrait & Landscape <1024px) */}
-          <div className="hidden lg:block fixed top-4 left-4 z-20 max-w-md pointer-events-none">
-            <div className="bg-slate-900/95 border border-slate-700/90 rounded-2xl px-4 py-3 shadow-2xl pointer-events-auto space-y-2">
+                {/* Right: Compact Score, MP & Question Counter */}
+                <div className="flex items-center gap-1 font-mono tabular-nums text-[10px] shrink-0">
+                  <span className="font-extrabold text-emerald-400">${displayedScore}</span>
+                  <span className="px-1.5 py-0.5 rounded bg-emerald-950 border border-emerald-700 text-emerald-300 font-bold">
+                    {displayedMp}MP
+                  </span>
+                  <span className="px-1.5 py-0.5 rounded bg-sky-950 border border-sky-700 text-sky-300 font-bold">
+                    {answeredQuestionIds.size}/{activeQuestions.length}
+                  </span>
+                </div>
+              </div>
+
+              {/* Expandable Mobile Classmates Teleport & Versus Invite Drawer (Clears exact radarSizePx on right!) */}
+              {isMobilePeersOpen && (
+                <div
+                  style={{ marginRight: `${vp.radarSizePx + 12}px` }}
+                  className="bg-slate-900/95 border border-emerald-500/80 rounded-xl p-2 shadow-2xl pointer-events-auto space-y-1.5"
+                >
+                  <div className="flex items-center justify-between text-[10px] font-mono text-emerald-400 font-bold gap-1">
+                    <span className="truncate">TEMAN ONLINE ({onlineClassmates.length}):</span>
+                    <button
+                      onClick={() => {
+                        handleTeleportToPosition(1200, 780);
+                        setIsMobilePeersOpen(false);
+                      }}
+                      className="px-2 py-0.5 rounded bg-sky-900 text-sky-200 text-[10px] shrink-0"
+                    >
+                      Ke Lap. Upacara
+                    </button>
+                  </div>
+                  {onlineClassmates.length > 0 ? (
+                    <div className="flex flex-col gap-1.5 max-h-28 overflow-y-auto">
+                      {onlineClassmates.map((peer) => (
+                        <div
+                          key={peer.id}
+                          className="flex items-center justify-between gap-1.5 px-2 py-1 bg-slate-950 border border-slate-800 rounded-lg"
+                        >
+                          <div className="text-[11px] font-bold text-slate-100 truncate">
+                            {peer.name}{' '}
+                            <span className="text-[10px] text-slate-400">({peer.studentClass})</span>
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              onClick={() => {
+                                handleTeleportToPosition(peer.x + 28, peer.y + 18);
+                                setIsMobilePeersOpen(false);
+                              }}
+                              className="px-2 py-0.5 text-[10px] font-bold text-emerald-300 bg-emerald-950 border border-emerald-600/70 rounded"
+                            >
+                              Hampiri
+                            </button>
+                            <button
+                              onClick={() => {
+                                handleSendVersusInvite(peer);
+                                setIsMobilePeersOpen(false);
+                              }}
+                              className="px-2 py-0.5 text-[10px] font-bold text-white bg-rose-600 rounded"
+                            >
+                              ⚔️ Duel
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-[11px] text-slate-300">
+                      Ajak teman sekelas masuk dengan Kode Room <strong>{activePin}</strong> untuk
+                      bertemu & Duel Versus 1v1!
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 3B. DESKTOP TOP-LEFT & TOP-RIGHT HUD (Only when !vp.isMobileLayout) */}
+          {!vp.isMobileLayout && (
+            <div className="fixed top-4 left-4 z-20 max-w-md pointer-events-none">
+              <div className="bg-slate-900/95 border border-slate-700/90 rounded-2xl px-4 py-3 shadow-2xl pointer-events-auto space-y-2">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
                   <span className="text-[11px] font-bold text-slate-400">ROOM:</span>
@@ -2518,55 +2532,76 @@ export default function App() {
               )}
             </div>
           </div>
+          )}
 
-          <div className="hidden lg:block fixed top-4 right-4 z-20 pointer-events-none">
-            <div className="bg-slate-900/95 border-2 border-slate-700 rounded-2xl px-5 py-3 shadow-2xl text-right space-y-1 font-mono tabular-nums pointer-events-auto">
-              <div className="flex items-center justify-end gap-2">
-                <span className="px-2 py-0.5 rounded bg-emerald-950 border border-emerald-700 text-[10px] font-bold text-emerald-300">
-                  ● AUTO-SAVE {lastAutoSaveTime}
-                </span>
-                <span className="text-[11px] font-bold text-amber-400 tracking-wider uppercase">
-                  {studentName || 'Siswa'} · {studentClass}
-                </span>
-              </div>
-              <div className="text-2xl font-extrabold text-emerald-400 tracking-tight">
-                $ {displayedScore.toString().padStart(6, '0')}
-              </div>
-              <div className="flex items-center justify-end gap-3 text-xs pt-0.5">
-                <span className="px-2.5 py-0.5 rounded bg-emerald-950/90 border border-emerald-600/70 text-emerald-300 font-bold">
-                  POIN MISI: {displayedMp} MP
-                </span>
-                <span className="px-2.5 py-0.5 rounded bg-sky-950/90 border border-sky-600/70 text-sky-300 font-bold">
-                  SOAL: {answeredQuestionIds.size}/{activeQuestions.length}
-                </span>
-              </div>
-              <div className="text-[11px] text-slate-400">
-                Barang: <strong className="text-slate-200">{collectedItemsCount}</strong> · Lokasi
-                MTsN 14 Halim: ({Math.round(localHud.x)}, {Math.round(localHud.y)})
+          {!vp.isMobileLayout && (
+            <div className="fixed top-4 right-4 z-20 pointer-events-none">
+              <div className="bg-slate-900/95 border-2 border-slate-700 rounded-2xl px-5 py-3 shadow-2xl text-right space-y-1 font-mono tabular-nums pointer-events-auto">
+                <div className="flex items-center justify-end gap-2">
+                  <span className="px-2 py-0.5 rounded bg-emerald-950 border border-emerald-700 text-[10px] font-bold text-emerald-300">
+                    ● AUTO-SAVE {lastAutoSaveTime}
+                  </span>
+                  <span className="text-[11px] font-bold text-amber-400 tracking-wider uppercase">
+                    {studentName || 'Siswa'} · {studentClass}
+                  </span>
+                </div>
+                <div className="text-2xl font-extrabold text-emerald-400 tracking-tight">
+                  $ {displayedScore.toString().padStart(6, '0')}
+                </div>
+                <div className="flex items-center justify-end gap-3 text-xs pt-0.5">
+                  <span className="px-2.5 py-0.5 rounded bg-emerald-950/90 border border-emerald-600/70 text-emerald-300 font-bold">
+                    POIN MISI: {displayedMp} MP
+                  </span>
+                  <span className="px-2.5 py-0.5 rounded bg-sky-950/90 border border-sky-600/70 text-sky-300 font-bold">
+                    SOAL: {answeredQuestionIds.size}/{activeQuestions.length}
+                  </span>
+                </div>
+                <div className="text-[11px] text-slate-400">
+                  Barang: <strong className="text-slate-200">{collectedItemsCount}</strong> · Lokasi
+                  MTsN 14 Halim: ({Math.round(localHud.x)}, {Math.round(localHud.y)})
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
-          {/* 3C. ROBLOX-STYLE OPEN-WORLD REAL-TIME CHAT WINDOW (Collapsible, works on Handphone & Desktop) */}
+          {/* 3C. ROBLOX-STYLE OPEN-WORLD REAL-TIME CHAT WINDOW (Resolution-Adaptive for Handphone & Desktop) */}
           {isChatOpen && (
-            <div className="fixed top-13 lg:top-40 left-2 lg:left-4 z-30 w-[92vw] max-w-sm bg-slate-900/95 border-2 border-sky-500/80 rounded-2xl shadow-2xl pointer-events-auto flex flex-col overflow-hidden">
-              <div className="flex items-center justify-between px-3.5 py-2 bg-slate-950 border-b border-slate-800">
-                <div className="flex items-center gap-2">
-                  <MessageSquare className="w-4 h-4 text-sky-400" />
-                  <span className="text-xs font-extrabold text-slate-100">
+            <div
+              style={{
+                top: vp.isMobileLayout ? 44 : 156,
+                left: vp.isMobileLayout ? 8 : 16,
+                width: vp.isMobileLayout
+                  ? `${Math.min(350, vp.width - (vp.isLandscape ? vp.radarSizePx + 24 : 16))}px`
+                  : '384px',
+              }}
+              className="fixed z-30 bg-slate-900/95 border-2 border-sky-500/80 rounded-2xl shadow-2xl pointer-events-auto flex flex-col overflow-hidden"
+            >
+              <div className="flex items-center justify-between px-3 py-1.5 sm:py-2 bg-slate-950 border-b border-slate-800 shrink-0">
+                <div className="flex items-center gap-2 min-w-0">
+                  <MessageSquare className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                  <span className="text-[11px] sm:text-xs font-extrabold text-slate-100 truncate">
                     CHAT OPEN-WORLD MTsN 14 HALIM
                   </span>
                 </div>
                 <button
                   onClick={() => setIsChatOpen(false)}
-                  className="p-1 text-slate-400 hover:text-slate-100 bg-slate-800 rounded-lg"
+                  className="p-1 text-slate-400 hover:text-slate-100 bg-slate-800 rounded-lg shrink-0"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
               </div>
 
-              {/* Message Feed */}
-              <div className="p-3 space-y-2 max-h-44 sm:max-h-56 overflow-y-auto text-xs bg-slate-950/60">
+              {/* Message Feed (Dynamically constrained to phone viewport height so input box is never pushed off screen) */}
+              <div
+                style={{
+                  maxHeight: vp.isCompactHeight
+                    ? `${Math.max(72, vp.height - 170)}px`
+                    : vp.isMobileLayout
+                    ? '175px'
+                    : '220px',
+                }}
+                className="p-2.5 sm:p-3 space-y-1.5 sm:space-y-2 overflow-y-auto text-xs bg-slate-950/60"
+              >
                 {chatMessages.map((msg) => {
                   const isMe = msg.senderId === localPlayerIdRef.current;
                   return (
@@ -2656,10 +2691,22 @@ export default function App() {
             </div>
           )}
 
-          {/* Proximity Action Prompts (Centered between Joystick & Jump on Landscape HP) */}
-          <div className="fixed bottom-42 max-lg:landscape:bottom-12 lg:bottom-24 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-1.5 w-[90vw] max-lg:landscape:w-[calc(100vw-220px)] max-w-lg px-2 pointer-events-none">
+          {/* Proximity Action Prompts (Resolution-Adaptive safe width & height so it NEVER overlaps Joystick or Jump!) */}
+          <div
+            style={{
+              width: `${vp.centerSafeWidthPx}px`,
+              bottom: vp.isMobileLayout
+                ? vp.isLandscape
+                  ? isDockCollapsed
+                    ? 28
+                    : 54
+                  : vp.joystickSizePx + 58
+                : 92,
+            }}
+            className="fixed left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-1.5 px-1 pointer-events-none"
+          >
             {nearbyTeacherPost && (
-              <div className="w-full p-2 sm:p-3.5 max-lg:landscape:py-1.5 max-lg:landscape:px-2.5 bg-slate-900/95 border-2 border-amber-400 rounded-xl sm:rounded-2xl shadow-2xl flex items-center justify-between gap-2 pointer-events-auto">
+              <div className="w-full p-2 sm:p-3 bg-slate-900/95 border-2 border-amber-400 rounded-xl sm:rounded-2xl shadow-2xl flex items-center justify-between gap-2 pointer-events-auto">
                 <div className="flex items-center gap-2 min-w-0">
                   <div className="p-1.5 sm:p-2 rounded-lg bg-amber-500/20 text-amber-300 shrink-0">
                     <GraduationCap className="w-4 h-4 sm:w-5 sm:h-5" />
@@ -2687,7 +2734,7 @@ export default function App() {
             )}
 
             {nearbyVersusTarget && (
-              <div className="w-full p-2 sm:p-3.5 max-lg:landscape:py-1.5 max-lg:landscape:px-2.5 bg-slate-900/95 border-2 border-rose-500 rounded-xl sm:rounded-2xl shadow-2xl flex items-center justify-between gap-2 pointer-events-auto">
+              <div className="w-full p-2 sm:p-3 bg-slate-900/95 border-2 border-rose-500 rounded-xl sm:rounded-2xl shadow-2xl flex items-center justify-between gap-2 pointer-events-auto">
                 <div className="flex items-center gap-2 min-w-0">
                   <div className="p-1.5 sm:p-2 rounded-lg bg-rose-500/20 text-rose-300 shrink-0">
                     <Swords className="w-4 h-4 sm:w-5 sm:h-5" />
@@ -2714,8 +2761,14 @@ export default function App() {
             )}
           </div>
 
-          {/* Unified Collapsible Bottom Control Dock (Constrained on Landscape HP so it never touches Joystick/Jump) */}
-          <div className="fixed bottom-1 lg:bottom-4 left-1/2 -translate-x-1/2 z-20 w-[96vw] max-lg:landscape:w-[calc(100vw-220px)] lg:w-full max-w-[min(860px,94vw)] pointer-events-none flex flex-col items-center">
+          {/* Unified Collapsible Bottom Control Dock (Sized dynamically to vp.centerSafeWidthPx so it never touches Joystick/Jump) */}
+          <div
+            style={{
+              width: `${vp.centerSafeWidthPx}px`,
+              bottom: vp.isMobileLayout ? 4 : 14,
+            }}
+            className="fixed left-1/2 -translate-x-1/2 z-20 pointer-events-none flex flex-col items-center"
+          >
             <button
               onClick={() => setIsDockCollapsed((prev) => !prev)}
               className="pointer-events-auto flex items-center gap-1 px-3 py-0.5 sm:py-1 text-[10px] sm:text-[11px] font-semibold text-slate-300 bg-slate-900/95 hover:bg-slate-800 border border-b-0 border-slate-700 rounded-t-lg sm:rounded-t-xl transition-colors whitespace-nowrap shrink-0"
@@ -2796,13 +2849,15 @@ export default function App() {
                     )}
                   </button>
 
-                  <button
-                    onClick={() => setIsMaterialModalOpen(true)}
-                    className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 sm:py-2 text-[11px] sm:text-xs font-semibold text-slate-100 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg sm:rounded-xl transition-colors whitespace-nowrap shrink-0"
-                  >
-                    <BookOpen className="w-3.5 h-3.5 text-sky-400" />
-                    <span>Materi</span>
-                  </button>
+                  {localRole === 'TEACHER' && (
+                    <button
+                      onClick={() => setIsMaterialModalOpen(true)}
+                      className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 sm:py-2 text-[11px] sm:text-xs font-semibold text-slate-100 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg sm:rounded-xl transition-colors whitespace-nowrap shrink-0"
+                    >
+                      <BookOpen className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Kelola Bank Soal</span>
+                    </button>
+                  )}
 
                   <button
                     onClick={handleFinishToAnalysis}
@@ -2894,6 +2949,35 @@ export default function App() {
           onOpenMaterialManager={() => {
             setIsAnalysisPreviewOpen(false);
             setIsMaterialModalOpen(true);
+          }}
+        />
+      )}
+
+      {/* Floating Roblox Building Entrance Prompt Button */}
+      {joinedRoom && nearbyEntranceBuilding && !activeBuildingInterior && activeTeacherModalIndex === null && (
+        <div className="fixed bottom-20 sm:bottom-24 left-1/2 -translate-x-1/2 z-40 animate-bounce">
+          <button
+            onClick={() => {
+              soundEngine.playClick();
+              setActiveBuildingInterior(nearbyEntranceBuilding);
+            }}
+            className="flex items-center gap-3 px-6 py-3 rounded-2xl bg-gradient-to-r from-sky-500 via-cyan-500 to-blue-600 text-slate-950 font-black text-xs sm:text-sm font-mono uppercase tracking-wider shadow-2xl shadow-cyan-500/50 border-2 border-white/60 hover:scale-105 active:scale-95 transition-all"
+          >
+            <span className="text-xl">🚪</span>
+            <span>MASUK RUANGAN: {nearbyEntranceBuilding.buildingName.split(' ')[0]} {nearbyEntranceBuilding.buildingName.split(' ')[1] || ''} [TEKAN E / TAP]</span>
+          </button>
+        </div>
+      )}
+
+      {/* Building Interior Exploration Modal */}
+      {activeBuildingInterior && (
+        <BuildingInteriorModal
+          building={activeBuildingInterior}
+          onClose={() => setActiveBuildingInterior(null)}
+          onStartTeacherQuiz={() => {
+            const post = activeBuildingInterior;
+            setActiveBuildingInterior(null);
+            setActiveTeacherModalIndex(post.index);
           }}
         />
       )}
