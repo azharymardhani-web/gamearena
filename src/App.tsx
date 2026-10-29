@@ -20,6 +20,7 @@ import {
   VersusMatchStateClient,
 } from './components/VersusAndTeacherModals';
 import { soundEngine } from './utils/soundEngine';
+import { CloudArenaBridge } from './utils/cloudArenaBridge';
 import {
   Volume2,
   VolumeX,
@@ -88,9 +89,15 @@ interface SavedRealtimeSession {
   savedAt: number;
 }
 
-const TAB_PLAYER_ID_KEY = 'mtsn14_tab_player_id_v3';
-const TAB_SESSION_STORAGE_KEY = 'mtsn14_halim_tab_session_v3';
-const BACKUP_SESSION_STORAGE_KEY = 'mtsn14_halim_backup_session_v3';
+const TAB_PLAYER_ID_KEY = 'mtsn14_tab_player_id_v4';
+const TAB_SESSION_STORAGE_KEY = 'mtsn14_halim_tab_session_v4';
+const BACKUP_SESSION_STORAGE_KEY = 'mtsn14_halim_backup_session_v4';
+const RELOAD_TICKET_KEY = 'mtsn14_reload_ticket_v4';
+
+// Unique per-window in-memory runtime ID (NEVER cloned by Chrome "Duplicate Tab"!)
+const WINDOW_RUNTIME_ID = `${Date.now().toString(36).slice(-4)}${Math.random()
+  .toString(36)
+  .slice(2, 6)}`;
 
 const QUICK_CHAT_PHRASES = [
   'Halo semua! 👋',
@@ -107,18 +114,12 @@ function normalizePin(raw: string): string {
   return cleaned || 'MTN14';
 }
 
-function getOrCreateTabPlayerId(): string {
-  try {
-    const existing = sessionStorage.getItem(TAB_PLAYER_ID_KEY);
-    if (existing && existing.startsWith('p-')) return existing;
-    const created = `p-${Date.now().toString(36).slice(-4)}-${Math.random()
-      .toString(36)
-      .slice(2, 7)}`;
-    sessionStorage.setItem(TAB_PLAYER_ID_KEY, created);
-    return created;
-  } catch {
-    return `p-${Math.random().toString(36).slice(2, 9)}`;
-  }
+function makePlayerIdForWindow(nameOrRole?: string): string {
+  const slug = String(nameOrRole || 'siswa')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '')
+    .slice(0, 8);
+  return `p-${slug || 'siswa'}-${WINDOW_RUNTIME_ID}`;
 }
 
 function getInitialSpawnForPlayer(playerId: string): { x: number; y: number } {
@@ -135,24 +136,47 @@ function getInitialSpawnForPlayer(playerId: string): { x: number; y: number } {
 
 function loadSavedSession(): SavedRealtimeSession | null {
   try {
-    const tabId = getOrCreateTabPlayerId();
-    // 1. Check current tab's session first (preserves active tab across F5 refresh without colliding across multiple open tabs)
-    const tabRaw = sessionStorage.getItem(TAB_SESSION_STORAGE_KEY);
-    if (tabRaw) {
-      const parsed = JSON.parse(tabRaw) as SavedRealtimeSession;
-      if (parsed && parsed.studentName) {
-        return { ...parsed, playerId: tabId };
+    // Check if this page load is an actual F5 / browser reload of an active tab (within 5 seconds of beforeunload)
+    // vs a "Duplicate Tab" or newly opened tab (where beforeunload did NOT fire!)
+    const ticketRaw = sessionStorage.getItem(RELOAD_TICKET_KEY);
+    sessionStorage.removeItem(RELOAD_TICKET_KEY);
+
+    let isTruePageReload = false;
+    let ticketPlayerId = '';
+    if (ticketRaw) {
+      try {
+        const ticket = JSON.parse(ticketRaw);
+        if (ticket && ticket.playerId && Date.now() - (ticket.ts || 0) < 6000) {
+          isTruePageReload = true;
+          ticketPlayerId = ticket.playerId;
+        }
+      } catch {
+        // Ignore
       }
     }
-    // 2. If this is a newly opened tab, check localStorage backup for pre-filling form fields (with joinedRoom: false so multiple tabs don't collide!)
+
+    if (isTruePageReload) {
+      const tabRaw = sessionStorage.getItem(TAB_SESSION_STORAGE_KEY);
+      if (tabRaw) {
+        const parsed = JSON.parse(tabRaw) as SavedRealtimeSession;
+        if (parsed && parsed.studentName) {
+          return { ...parsed, playerId: ticketPlayerId };
+        }
+      }
+    }
+
+    // For a newly opened tab or "Duplicate Tab", ALWAYS generate a 100% unique playerId and start at Lobby (joinedRoom: false)
+    const freshTabId = makePlayerIdForWindow('siswa');
+    sessionStorage.setItem(TAB_PLAYER_ID_KEY, freshTabId);
+    const spawn = getInitialSpawnForPlayer(freshTabId);
+
     const backupRaw = localStorage.getItem(BACKUP_SESSION_STORAGE_KEY);
     if (backupRaw) {
       const parsedBackup = JSON.parse(backupRaw) as SavedRealtimeSession;
       if (parsedBackup) {
-        const spawn = getInitialSpawnForPlayer(tabId);
         return {
           ...parsedBackup,
-          playerId: tabId,
+          playerId: freshTabId,
           joinedRoom: false,
           x: spawn.x,
           y: spawn.y,
@@ -165,15 +189,18 @@ function loadSavedSession(): SavedRealtimeSession | null {
   }
 }
 
-// Merge incoming player list while preserving fresher WebSocket movement timestamps
+// Merge incoming player list while preserving fresher WebSocket/CloudBridge movement AND active cross-container peers
 function mergePlayersPreservingFreshMovement(
   prev: MapPlayerEntity[],
   incoming: MapPlayerEntity[]
 ): MapPlayerEntity[] {
+  const now = Date.now();
   const prevMap = new Map<string, MapPlayerEntity>();
   for (const p of prev) prevMap.set(p.id, p);
 
-  return incoming.map((inc) => {
+  const incomingIds = new Set<string>();
+  const merged = incoming.map((inc) => {
+    incomingIds.add(inc.id);
     const existing = prevMap.get(inc.id);
     if (
       existing &&
@@ -189,11 +216,22 @@ function mergePlayersPreservingFreshMovement(
         vy: existing.vy,
         facingAngle: existing.facingAngle,
         jumpY: existing.jumpY,
+        lastChatText: existing.lastChatText ?? inc.lastChatText,
+        lastChatTime: existing.lastChatTime ?? inc.lastChatTime,
         lastUpdated: existing.lastUpdated,
       };
     }
     return inc;
   });
+
+  // Also keep any recently active human players received via CloudArenaBridge / BroadcastChannel (within last 25s)
+  for (const p of prev) {
+    if (!incomingIds.has(p.id) && !p.isRoamingPeer && now - (p.lastUpdated || 0) < 25000) {
+      merged.push(p);
+    }
+  }
+
+  return merged;
 }
 
 export default function App() {
@@ -332,7 +370,7 @@ export default function App() {
   const [isAnalysisPreviewOpen, setIsAnalysisPreviewOpen] = useState<boolean>(false);
   const [isMuted, setIsMuted] = useState<boolean>(false);
   const initialTabPlayerId = useMemo(
-    () => initialSession?.playerId || getOrCreateTabPlayerId(),
+    () => initialSession?.playerId || makePlayerIdForWindow(initialSession?.studentName || 'siswa'),
     [initialSession]
   );
   const initialSpawn = useMemo(
@@ -347,6 +385,8 @@ export default function App() {
   });
 
   const wsRef = useRef<WebSocket | null>(null);
+  const cloudBridgeRef = useRef<CloudArenaBridge | null>(null);
+  const hasSpawnedInRoomRef = useRef<boolean>(Boolean(initialSession?.joinedRoom));
   const localPlayerIdRef = useRef<string>(initialTabPlayerId);
   const latestPosRef = useRef<{
     x: number;
@@ -363,6 +403,36 @@ export default function App() {
     facingAngle: Math.PI,
     jumpY: 0,
   });
+
+  // Always keep a ref of current player metadata so WebSocket & HTTP intervals never need to tear down on score/MP updates
+  const playerMetaRef = useRef({
+    joinedRoom,
+    activePin,
+    studentName,
+    studentClass,
+    localRole,
+    avatarColor,
+    selectedPresetId,
+    localScore,
+    missionPoints,
+    collectedItemsCount,
+    answeredQuestionIds,
+    localChatBubble,
+  });
+  playerMetaRef.current = {
+    joinedRoom,
+    activePin,
+    studentName,
+    studentClass,
+    localRole,
+    avatarColor,
+    selectedPresetId,
+    localScore,
+    missionPoints,
+    collectedItemsCount,
+    answeredQuestionIds,
+    localChatBubble,
+  };
 
   useEffect(() => {
     if (!resumedSessionToast) return;
@@ -440,6 +510,14 @@ export default function App() {
   useEffect(() => {
     const handleBeforeUnload = () => {
       persistRealtimeSnapshot();
+      try {
+        sessionStorage.setItem(
+          RELOAD_TICKET_KEY,
+          JSON.stringify({ playerId: localPlayerIdRef.current, ts: Date.now() })
+        );
+      } catch {
+        // Ignore
+      }
     };
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'hidden') {
@@ -532,7 +610,187 @@ export default function App() {
     }
   }, []);
 
-  // Connect & Auto-Reconnect to Real-Time Classroom WebSocket Server
+  // Helper to upsert a single incoming remote player movement packet into classPlayers
+  const applyIncomingPlayerMoved = useCallback((payload: any) => {
+    if (!payload || !payload.playerId) return;
+    const {
+      playerId,
+      name,
+      studentClass: pClass,
+      role,
+      characterPreset,
+      color,
+      x,
+      y,
+      vx,
+      vy,
+      facingAngle,
+      jumpY,
+      score,
+      missionPoints: mp,
+      collectedItemsCount: itemsCount,
+      answeredCount,
+      lastChatText,
+      lastChatTime,
+      lastUpdated,
+      isRoamingPeer,
+    } = payload;
+
+    setClassPlayers((prev) => {
+      const exists = prev.some((p) => p.id === playerId);
+      if (!exists) {
+        return [
+          ...prev,
+          {
+            id: playerId,
+            name: name || 'Siswa MTsN 14',
+            studentClass: pClass || 'Kelas 8A',
+            role: role === 'TEACHER' ? 'TEACHER' : 'STUDENT',
+            characterPreset: characterPreset || 'cj_rizky',
+            color: color || '#0ea5e9',
+            x: x ?? 1200,
+            y: y ?? 780,
+            vx: vx ?? 0,
+            vy: vy ?? 0,
+            facingAngle: facingAngle ?? Math.PI,
+            jumpY: jumpY ?? 0,
+            score: score ?? 0,
+            missionPoints: mp ?? 100,
+            collectedItemsCount: itemsCount ?? 0,
+            answeredCount: answeredCount ?? 0,
+            streak: 0,
+            hp: 100,
+            currentSector: null,
+            lockedOption: null,
+            lastChatText,
+            lastChatTime,
+            lastUpdated: lastUpdated || Date.now(),
+            isRoamingPeer: Boolean(isRoamingPeer),
+          },
+        ];
+      }
+      return prev.map((p) =>
+        p.id === playerId
+          ? {
+              ...p,
+              name: name || p.name,
+              studentClass: pClass || p.studentClass,
+              role: role || p.role,
+              characterPreset: characterPreset || p.characterPreset,
+              color: color || p.color,
+              x: typeof x === 'number' ? x : p.x,
+              y: typeof y === 'number' ? y : p.y,
+              vx: typeof vx === 'number' ? vx : p.vx,
+              vy: typeof vy === 'number' ? vy : p.vy,
+              facingAngle: typeof facingAngle === 'number' ? facingAngle : p.facingAngle,
+              jumpY: typeof jumpY === 'number' ? jumpY : p.jumpY,
+              score: score ?? p.score,
+              missionPoints: mp ?? p.missionPoints,
+              collectedItemsCount: itemsCount ?? p.collectedItemsCount,
+              answeredCount: answeredCount ?? p.answeredCount,
+              lastChatText: lastChatText ?? p.lastChatText,
+              lastChatTime: lastChatTime ?? p.lastChatTime,
+              lastUpdated: lastUpdated || Date.now(),
+              isRoamingPeer:
+                typeof isRoamingPeer === 'boolean' ? isRoamingPeer : p.isRoamingPeer,
+            }
+          : p
+      );
+    });
+  }, []);
+
+  // Initialize Multi-Transport CloudArenaBridge (BroadcastChannel + Dual MQTT-over-WS Brokers)
+  useEffect(() => {
+    const bridge = new CloudArenaBridge();
+    cloudBridgeRef.current = bridge;
+
+    const unsubscribe = bridge.subscribe((pkt) => {
+      if (pkt.type === 'arena:hello') {
+        // If another tab or device claims the exact same playerId, immediately switch our playerId so both appear!
+        if (
+          pkt.payload?.playerId &&
+          pkt.payload.playerId === localPlayerIdRef.current &&
+          pkt.originTabId !== bridge.tabRuntimeId
+        ) {
+          const newId = makePlayerIdForWindow(playerMetaRef.current.studentName || 'siswa');
+          localPlayerIdRef.current = newId;
+        }
+        // Immediately reply with our current position so the newly joined classmate sees us right away!
+        const meta = playerMetaRef.current;
+        if (meta.joinedRoom) {
+          bridge.publish('player:moved', {
+            playerId: localPlayerIdRef.current,
+            name: meta.studentName || 'Siswa MTsN 14',
+            studentClass: meta.studentClass,
+            role: meta.localRole,
+            characterPreset: meta.selectedPresetId,
+            color: meta.avatarColor,
+            x: latestPosRef.current.x,
+            y: latestPosRef.current.y,
+            vx: latestPosRef.current.vx,
+            vy: latestPosRef.current.vy,
+            facingAngle: latestPosRef.current.facingAngle,
+            jumpY: latestPosRef.current.jumpY,
+            score: meta.localScore,
+            missionPoints: meta.missionPoints,
+            collectedItemsCount: meta.collectedItemsCount,
+            answeredCount: meta.answeredQuestionIds.size,
+            answeredQuestionIds: Array.from(meta.answeredQuestionIds),
+            lastChatText: meta.localChatBubble?.text,
+            lastChatTime: meta.localChatBubble?.timestamp,
+            lastUpdated: Date.now(),
+            isRoamingPeer: false,
+          });
+        }
+      } else if (pkt.type === 'player:moved') {
+        applyIncomingPlayerMoved(pkt.payload);
+      } else if (pkt.type === 'player:left' && pkt.payload?.playerId) {
+        setClassPlayers((prev) => prev.filter((p) => p.id !== pkt.payload.playerId));
+      } else if (pkt.type === 'chat:message' && pkt.payload?.id) {
+        const incomingChat = pkt.payload as RoomChatMessageClient;
+        setChatMessages((prev) => {
+          if (prev.some((c) => c.id === incomingChat.id)) return prev;
+          return [...prev, incomingChat].slice(-60);
+        });
+        setClassPlayers((prev) =>
+          prev.map((p) =>
+            p.id === incomingChat.senderId
+              ? {
+                  ...p,
+                  lastChatText: incomingChat.text,
+                  lastChatTime: incomingChat.timestamp,
+                }
+              : p
+          )
+        );
+        if (incomingChat.senderId !== localPlayerIdRef.current) {
+          soundEngine.playPickupData();
+          setUnreadChatCount((c) => c + 1);
+        }
+      } else if (pkt.type === 'versus:update' && pkt.payload?.id) {
+        const match = pkt.payload as VersusMatchStateClient;
+        upsertVersusMatchState(match);
+        if (
+          match.status === 'PENDING_CONSENT' &&
+          match.opponentId === localPlayerIdRef.current
+        ) {
+          soundEngine.playDash();
+        }
+      } else if (pkt.type === 'teacher:answer' && pkt.payload?.questionId) {
+        const ev = pkt.payload as PlayerAnswerEvent;
+        setSessionAnswers((prev) => [...prev, ev]);
+      } else if (pkt.type === 'room:status' && pkt.payload?.status) {
+        setRoomStatus(pkt.payload.status);
+      }
+    });
+
+    return () => {
+      unsubscribe();
+      bridge.dispose();
+    };
+  }, [applyIncomingPlayerMoved, upsertVersusMatchState]);
+
+  // Connect & Auto-Reconnect to Real-Time Classroom WebSocket Server (Depends ONLY on joinedRoom so it never disconnects on score/MP updates!)
   useEffect(() => {
     let isUnmounted = false;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -545,24 +803,25 @@ export default function App() {
       wsRef.current = ws;
 
       ws.onopen = () => {
-        if (joinedRoom) {
+        const meta = playerMetaRef.current;
+        if (meta.joinedRoom) {
           ws.send(
             JSON.stringify({
               type: 'room:join',
               payload: {
-                pin: activePin,
+                pin: meta.activePin,
                 playerId: localPlayerIdRef.current,
-                playerName: studentName || 'Siswa MTsN 14',
-                studentClass,
-                role: localRole,
-                color: avatarColor,
-                characterPreset: selectedPresetId,
+                playerName: meta.studentName || 'Siswa MTsN 14',
+                studentClass: meta.studentClass,
+                role: meta.localRole,
+                color: meta.avatarColor,
+                characterPreset: meta.selectedPresetId,
                 x: latestPosRef.current.x,
                 y: latestPosRef.current.y,
-                score: localScore,
-                missionPoints,
-                collectedItemsCount,
-                answeredQuestionIds: Array.from(answeredQuestionIds),
+                score: meta.localScore,
+                missionPoints: meta.missionPoints,
+                collectedItemsCount: meta.collectedItemsCount,
+                answeredQuestionIds: Array.from(meta.answeredQuestionIds),
               },
             })
           );
@@ -574,7 +833,6 @@ export default function App() {
           const msg = JSON.parse(event.data);
           if (msg.type === 'room:joined') {
             const room = msg.payload;
-            setActivePin(room.pin);
             setRoomStatus(room.status);
             setSelectedCategory(room.categoryFilter || 'Semua Materi');
             setCurrentQuestionIndex(room.currentQuestionIndex || 0);
@@ -589,7 +847,12 @@ export default function App() {
               setVersusMatches(room.versusMatches);
             }
             applyRestoredServerPlayer(room.player);
-            if (typeof room.spawnX === 'number' && typeof room.spawnY === 'number') {
+            if (
+              !hasSpawnedInRoomRef.current &&
+              typeof room.spawnX === 'number' &&
+              typeof room.spawnY === 'number'
+            ) {
+              hasSpawnedInRoomRef.current = true;
               latestPosRef.current.x = room.spawnX;
               latestPosRef.current.y = room.spawnY;
               setTeleportCommand({
@@ -602,7 +865,6 @@ export default function App() {
             setJoinedRoom(true);
           } else if (msg.type === 'room:state') {
             const room = msg.payload;
-            setActivePin(room.pin);
             setRoomStatus((prevStatus) => {
               if (prevStatus !== 'FINISHED' && room.status === 'FINISHED') {
                 soundEngine.playVictoryFanfare();
@@ -622,86 +884,7 @@ export default function App() {
               setVersusMatches(room.versusMatches);
             }
           } else if (msg.type === 'player:moved') {
-            const {
-              playerId,
-              name,
-              studentClass: pClass,
-              characterPreset,
-              color,
-              x,
-              y,
-              vx,
-              vy,
-              facingAngle,
-              jumpY,
-              score,
-              missionPoints: mp,
-              collectedItemsCount: itemsCount,
-              answeredCount,
-              lastChatText,
-              lastChatTime,
-              lastUpdated,
-            } = msg.payload;
-
-            setClassPlayers((prev) => {
-              const exists = prev.some((p) => p.id === playerId);
-              if (!exists) {
-                return [
-                  ...prev,
-                  {
-                    id: playerId,
-                    name: name || 'Siswa MTsN 14',
-                    studentClass: pClass || 'Kelas 8A',
-                    role: 'STUDENT',
-                    characterPreset: characterPreset || 'cj_rizky',
-                    color: color || '#0ea5e9',
-                    x: x ?? 1200,
-                    y: y ?? 780,
-                    vx: vx ?? 0,
-                    vy: vy ?? 0,
-                    facingAngle: facingAngle ?? Math.PI,
-                    jumpY: jumpY ?? 0,
-                    score: score ?? 0,
-                    missionPoints: mp ?? 100,
-                    collectedItemsCount: itemsCount ?? 0,
-                    answeredCount: answeredCount ?? 0,
-                    streak: 0,
-                    hp: 100,
-                    currentSector: null,
-                    lockedOption: null,
-                    lastChatText,
-                    lastChatTime,
-                    lastUpdated: lastUpdated || Date.now(),
-                    isRoamingPeer: false,
-                  },
-                ];
-              }
-              return prev.map((p) =>
-                p.id === playerId
-                  ? {
-                      ...p,
-                      name: name || p.name,
-                      studentClass: pClass || p.studentClass,
-                      characterPreset: characterPreset || p.characterPreset,
-                      color: color || p.color,
-                      x,
-                      y,
-                      vx,
-                      vy,
-                      facingAngle:
-                        typeof facingAngle === 'number' ? facingAngle : p.facingAngle,
-                      jumpY: typeof jumpY === 'number' ? jumpY : p.jumpY,
-                      score: score ?? p.score,
-                      missionPoints: mp ?? p.missionPoints,
-                      collectedItemsCount: itemsCount ?? p.collectedItemsCount,
-                      answeredCount: answeredCount ?? p.answeredCount,
-                      lastChatText: lastChatText ?? p.lastChatText,
-                      lastChatTime: lastChatTime ?? p.lastChatTime,
-                      lastUpdated: lastUpdated || Date.now(),
-                    }
-                  : p
-              );
-            });
+            applyIncomingPlayerMoved(msg.payload);
           } else if (msg.type === 'chat:message') {
             const incomingChat = msg.payload as RoomChatMessageClient;
             if (incomingChat && incomingChat.id) {
@@ -709,7 +892,6 @@ export default function App() {
                 if (prev.some((c) => c.id === incomingChat.id)) return prev;
                 return [...prev, incomingChat].slice(-60);
               });
-              // Update overhead speech bubble on sender's 3D avatar immediately
               setClassPlayers((prev) =>
                 prev.map((p) =>
                   p.id === incomingChat.senderId
@@ -760,49 +942,68 @@ export default function App() {
       if (reconnectTimer) clearTimeout(reconnectTimer);
       wsRef.current?.close();
     };
-  }, [
-    joinedRoom,
-    activePin,
-    studentName,
-    studentClass,
-    localRole,
-    avatarColor,
-    selectedPresetId,
-    localScore,
-    missionPoints,
-    collectedItemsCount,
-    answeredQuestionIds,
-    applyRestoredServerPlayer,
-    upsertVersusMatchState,
-  ]);
+  }, [joinedRoom, applyRestoredServerPlayer, applyIncomingPlayerMoved, upsertVersusMatchState]);
 
-  // Dual-Transport HTTP Heartbeat & Real-Time Sync (Every 450ms while joinedRoom is true)
+  // Dual-Transport HTTP Heartbeat & CloudBridge Announce (Every 350ms while joinedRoom is true)
   useEffect(() => {
-    if (!joinedRoom || !activePin) return;
+    if (!joinedRoom) return;
+
+    // Immediately announce our arrival on CloudArenaBridge so all tabs/devices reply with their positions
+    cloudBridgeRef.current?.publish('arena:hello', {
+      playerId: localPlayerIdRef.current,
+      name: playerMetaRef.current.studentName || 'Siswa MTsN 14',
+    });
 
     const syncNow = () => {
+      const meta = playerMetaRef.current;
+      // 1. Broadcast our presence over CloudArenaBridge (keeps us visible across tabs, ais-dev, ais-pre, & phones even when standing still!)
+      cloudBridgeRef.current?.publish('player:moved', {
+        playerId: localPlayerIdRef.current,
+        name: meta.studentName || 'Siswa MTsN 14',
+        studentClass: meta.studentClass,
+        role: meta.localRole,
+        characterPreset: meta.selectedPresetId,
+        color: meta.avatarColor,
+        x: latestPosRef.current.x,
+        y: latestPosRef.current.y,
+        vx: latestPosRef.current.vx,
+        vy: latestPosRef.current.vy,
+        facingAngle: latestPosRef.current.facingAngle,
+        jumpY: latestPosRef.current.jumpY,
+        score: meta.localScore,
+        missionPoints: meta.missionPoints,
+        collectedItemsCount: meta.collectedItemsCount,
+        answeredCount: meta.answeredQuestionIds.size,
+        answeredQuestionIds: Array.from(meta.answeredQuestionIds),
+        lastChatText: meta.localChatBubble?.text,
+        lastChatTime: meta.localChatBubble?.timestamp,
+        lastUpdated: Date.now(),
+        isRoamingPeer: false,
+      });
+
+      // 2. Sync with local server via HTTP
       fetch('/api/room/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          pin: activePin,
+          pin: meta.activePin,
           playerId: localPlayerIdRef.current,
-          playerName: studentName || 'Siswa MTsN 14',
-          studentClass,
-          role: localRole,
-          color: avatarColor,
-          characterPreset: selectedPresetId,
+          playerName: meta.studentName || 'Siswa MTsN 14',
+          studentClass: meta.studentClass,
+          role: meta.localRole,
+          color: meta.avatarColor,
+          characterPreset: meta.selectedPresetId,
           x: latestPosRef.current.x,
           y: latestPosRef.current.y,
           vx: latestPosRef.current.vx,
           vy: latestPosRef.current.vy,
           facingAngle: latestPosRef.current.facingAngle,
           jumpY: latestPosRef.current.jumpY,
-          score: localScore,
-          missionPoints,
-          collectedItemsCount,
-          answeredCount: answeredQuestionIds.size,
-          answeredQuestionIds: Array.from(answeredQuestionIds),
+          score: meta.localScore,
+          missionPoints: meta.missionPoints,
+          collectedItemsCount: meta.collectedItemsCount,
+          answeredCount: meta.answeredQuestionIds.size,
+          answeredQuestionIds: Array.from(meta.answeredQuestionIds),
         }),
       })
         .then((r) => (r.ok ? r.json() : null))
@@ -816,18 +1017,19 @@ export default function App() {
             }
             if (Array.isArray(data.room.chatMessages)) {
               const msgs = data.room.chatMessages as RoomChatMessageClient[];
-              setChatMessages(msgs);
-              const newest = msgs[msgs.length - 1];
-              if (
-                newest &&
-                newest.id !== lastSeenChatIdRef.current &&
-                newest.senderId !== localPlayerIdRef.current
-              ) {
-                lastSeenChatIdRef.current = newest.id;
-              }
+              setChatMessages((prev) => {
+                const map = new Map<string, RoomChatMessageClient>();
+                for (const m of prev) map.set(m.id, m);
+                for (const m of msgs) map.set(m.id, m);
+                return Array.from(map.values())
+                  .sort((a, b) => a.timestamp - b.timestamp)
+                  .slice(-60);
+              });
             }
             if (Array.isArray(data.room.versusMatches)) {
-              setVersusMatches(data.room.versusMatches);
+              for (const m of data.room.versusMatches) {
+                upsertVersusMatchState(m);
+              }
             }
           }
           if (data?.player) {
@@ -840,20 +1042,7 @@ export default function App() {
     syncNow();
     const interval = setInterval(syncNow, 350);
     return () => clearInterval(interval);
-  }, [
-    joinedRoom,
-    activePin,
-    studentName,
-    studentClass,
-    localRole,
-    avatarColor,
-    selectedPresetId,
-    localScore,
-    missionPoints,
-    collectedItemsCount,
-    answeredQuestionIds,
-    applyRestoredServerPlayer,
-  ]);
+  }, [joinedRoom, applyRestoredServerPlayer, upsertVersusMatchState]);
 
   const enterRoomWithPin = async (
     rawPin: string,
@@ -967,6 +1156,14 @@ export default function App() {
       return;
     }
 
+    const uniqueId = makePlayerIdForWindow(cleanName);
+    localPlayerIdRef.current = uniqueId;
+    const spawn = getInitialSpawnForPlayer(uniqueId);
+    latestPosRef.current.x = spawn.x;
+    latestPosRef.current.y = spawn.y;
+    hasSpawnedInRoomRef.current = true;
+    setTeleportCommand({ x: spawn.x, y: spawn.y, seq: Date.now() });
+
     setCameraMode('FOLLOW_PLAYER');
     enterRoomWithPin(
       cleanPin,
@@ -976,13 +1173,21 @@ export default function App() {
       selectedPresetId,
       avatarColor,
       selectedCategory,
-      false
+      true
     );
   };
 
   const handleTeacherOpenRoom = (e: React.FormEvent) => {
     e.preventDefault();
     const cleanPin = normalizePin(teacherRoomCode);
+    const uniqueId = makePlayerIdForWindow('azhary');
+    localPlayerIdRef.current = uniqueId;
+    const spawn = getInitialSpawnForPlayer(uniqueId);
+    latestPosRef.current.x = spawn.x;
+    latestPosRef.current.y = spawn.y;
+    hasSpawnedInRoomRef.current = true;
+    setTeleportCommand({ x: spawn.x, y: spawn.y, seq: Date.now() });
+
     setStudentName('Azhary Mardhani, S.Kom');
     setStudentClass('Guru Informatika');
     setSelectedPresetId('cj_rizky');
@@ -997,21 +1202,32 @@ export default function App() {
       'cj_rizky',
       '#f59e0b',
       selectedCategory,
-      false
+      true
     );
   };
 
   const handleResetSavedSession = () => {
+    const oldPlayerId = localPlayerIdRef.current;
     try {
       sessionStorage.removeItem(TAB_SESSION_STORAGE_KEY);
       sessionStorage.removeItem(TAB_PLAYER_ID_KEY);
+      sessionStorage.removeItem(RELOAD_TICKET_KEY);
       localStorage.removeItem(BACKUP_SESSION_STORAGE_KEY);
     } catch {
       // ignore
     }
-    const freshId = getOrCreateTabPlayerId();
+    if (oldPlayerId) {
+      cloudBridgeRef.current?.publish('player:left', { playerId: oldPlayerId });
+      fetch('/api/room/leave', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ playerId: oldPlayerId }),
+      }).catch(() => {});
+    }
+    const freshId = makePlayerIdForWindow('siswa');
     const freshSpawn = getInitialSpawnForPlayer(freshId);
     localPlayerIdRef.current = freshId;
+    hasSpawnedInRoomRef.current = false;
     latestPosRef.current = {
       x: freshSpawn.x,
       y: freshSpawn.y,
@@ -1042,29 +1258,60 @@ export default function App() {
     ) => {
       latestPosRef.current = { x, y, vx, vy, facingAngle, jumpY };
 
+      const meta = playerMetaRef.current;
+      const nextScore = meta.localScore + scoreBonus;
+      const nextMp = Math.max(0, meta.missionPoints + missionPointsDelta);
+      const nextCollected = meta.collectedItemsCount + collectedDelta;
+
       if (scoreBonus !== 0) {
-        setLocalScore((prev) => prev + scoreBonus);
+        setLocalScore(nextScore);
       }
       if (missionPointsDelta !== 0) {
-        setMissionPoints((prev) => Math.max(0, prev + missionPointsDelta));
+        setMissionPoints(nextMp);
       }
       if (collectedDelta !== 0) {
-        setCollectedItemsCount((prev) => prev + collectedDelta);
+        setCollectedItemsCount(nextCollected);
       }
 
       persistRealtimeSnapshot(true, x, y);
 
+      // 1. Broadcast over CloudArenaBridge + BroadcastChannel
+      cloudBridgeRef.current?.publish('player:moved', {
+        playerId: localPlayerIdRef.current,
+        name: meta.studentName || 'Siswa MTsN 14',
+        studentClass: meta.studentClass,
+        role: meta.localRole,
+        characterPreset: meta.selectedPresetId,
+        color: meta.avatarColor,
+        x,
+        y,
+        vx,
+        vy,
+        facingAngle,
+        jumpY,
+        score: nextScore,
+        missionPoints: nextMp,
+        collectedItemsCount: nextCollected,
+        answeredCount: meta.answeredQuestionIds.size,
+        answeredQuestionIds: Array.from(meta.answeredQuestionIds),
+        lastChatText: meta.localChatBubble?.text,
+        lastChatTime: meta.localChatBubble?.timestamp,
+        lastUpdated: Date.now(),
+        isRoamingPeer: false,
+      });
+
+      // 2. Broadcast over local WebSocket
       if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
         wsRef.current.send(
           JSON.stringify({
             type: 'player:move',
             payload: {
-              pin: activePin,
+              pin: meta.activePin,
               playerId: localPlayerIdRef.current,
-              playerName: studentName || 'Siswa MTsN 14',
-              studentClass,
-              characterPreset: selectedPresetId,
-              color: avatarColor,
+              playerName: meta.studentName || 'Siswa MTsN 14',
+              studentClass: meta.studentClass,
+              characterPreset: meta.selectedPresetId,
+              color: meta.avatarColor,
               x,
               y,
               vx,
@@ -1079,7 +1326,7 @@ export default function App() {
         );
       }
     },
-    [activePin, studentName, studentClass, selectedPresetId, avatarColor, persistRealtimeSnapshot]
+    [persistRealtimeSnapshot]
   );
 
   // Send Roblox-Style Chat Message + Trigger 3D Overhead Speech Bubble
@@ -1089,9 +1336,24 @@ export default function App() {
       if (!cleanText) return;
 
       const now = Date.now();
+      const chatId = `chat-${now}-${Math.random().toString(36).slice(2, 6)}`;
+      const localMsg: RoomChatMessageClient = {
+        id: chatId,
+        senderId: localPlayerIdRef.current,
+        senderName: studentName || 'Siswa MTsN 14',
+        senderClass: studentClass,
+        senderRole: localRole,
+        senderColor: avatarColor,
+        text: cleanText,
+        timestamp: now,
+      };
+
       setLocalChatBubble({ text: cleanText, timestamp: now });
+      setChatMessages((prev) => [...prev, localMsg].slice(-60));
       setChatInput('');
       soundEngine.playPickupData();
+
+      cloudBridgeRef.current?.publish('chat:message', localMsg);
 
       if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
         wsRef.current.send(
@@ -1122,17 +1384,7 @@ export default function App() {
           senderColor: avatarColor,
           text: cleanText,
         }),
-      })
-        .then((r) => (r.ok ? r.json() : null))
-        .then((data) => {
-          if (data?.message) {
-            setChatMessages((prev) => {
-              if (prev.some((c) => c.id === data.message.id)) return prev;
-              return [...prev, data.message].slice(-60);
-            });
-          }
-        })
-        .catch(() => {});
+      }).catch(() => {});
     },
     [activePin, studentName, studentClass, localRole, avatarColor]
   );
@@ -1141,6 +1393,51 @@ export default function App() {
   const handleSendVersusInvite = useCallback(
     (opponent: MapPlayerEntity) => {
       soundEngine.playDash();
+      const isBot = Boolean(opponent.isRoamingPeer);
+      const clientMatch: VersusMatchStateClient = {
+        id: `vs-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        pin: activePin,
+        status: isBot ? 'IN_PROGRESS' : 'PENDING_CONSENT',
+        challengerId: localPlayerIdRef.current,
+        challengerName: studentName || 'Siswa MTsN 14',
+        challengerClass: studentClass,
+        opponentId: opponent.id,
+        opponentName: opponent.name,
+        opponentClass: opponent.studentClass,
+        isBotOpponent: isBot,
+        roundIdx: 0,
+        questions: [
+          {
+            prompt: 'Konversi cepat bilangan biner 1010(2) ke desimal adalah...',
+            options: ['8', '10', '12', '14'],
+            correctIndex: 1,
+            topic: 'Sistem Bilangan Biner',
+          },
+          {
+            prompt: 'Gerbang logika AND menghasilkan output 1 jika kedua input bernilai...',
+            options: ['0 dan 0', '1 dan 0', '0 dan 1', '1 dan 1'],
+            correctIndex: 3,
+            topic: 'Gerbang Logika CPU',
+          },
+          {
+            prompt: 'Protokol web yang mengenkripsi paket data dengan SSL/TLS adalah...',
+            options: ['HTTP', 'FTP', 'HTTPS', 'TELNET'],
+            correctIndex: 2,
+            topic: 'Keamanan Jaringan',
+          },
+        ],
+        challengerScore: 0,
+        opponentScore: 0,
+        challengerAnsweredRound: -1,
+        opponentAnsweredRound: -1,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+
+      upsertVersusMatchState(clientMatch);
+      setOpenVersusModalMatchId(clientMatch.id);
+      cloudBridgeRef.current?.publish('versus:update', clientMatch);
+
       if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
         wsRef.current.send(
           JSON.stringify({
@@ -1171,6 +1468,7 @@ export default function App() {
           if (data?.match) {
             upsertVersusMatchState(data.match);
             setOpenVersusModalMatchId(data.match.id);
+            cloudBridgeRef.current?.publish('versus:update', data.match);
           }
         })
         .catch(() => {});
@@ -1180,6 +1478,23 @@ export default function App() {
 
   const handleRespondVersusConsent = useCallback(
     (matchId: string, accept: boolean) => {
+      setVersusMatches((prev) => {
+        const next = prev.map((m) => {
+          if (m.id !== matchId) return m;
+          const updated: VersusMatchStateClient = {
+            ...m,
+            status: accept ? 'IN_PROGRESS' : 'DECLINED',
+            updatedAt: Date.now(),
+          };
+          cloudBridgeRef.current?.publish('versus:update', updated);
+          return updated;
+        });
+        return next;
+      });
+      if (accept) {
+        setOpenVersusModalMatchId(matchId);
+      }
+
       if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
         wsRef.current.send(
           JSON.stringify({
@@ -1197,9 +1512,7 @@ export default function App() {
         .then((data) => {
           if (data?.match) {
             upsertVersusMatchState(data.match);
-            if (accept) {
-              setOpenVersusModalMatchId(data.match.id);
-            }
+            cloudBridgeRef.current?.publish('versus:update', data.match);
           }
         })
         .catch(() => {});
@@ -1209,6 +1522,46 @@ export default function App() {
 
   const handleSubmitVersusRoundAnswer = useCallback(
     (matchId: string, roundIdx: number, selectedIndex: number, timeLeftSec: number) => {
+      setVersusMatches((prev) =>
+        prev.map((m) => {
+          if (m.id !== matchId || m.status !== 'IN_PROGRESS') return m;
+          const currentQ = m.questions[roundIdx] || m.questions[m.roundIdx];
+          const isCorrect = currentQ && selectedIndex === currentQ.correctIndex;
+          const gain = isCorrect ? 100 + Math.max(0, Math.min(10, timeLeftSec)) * 10 : 0;
+
+          const updated: VersusMatchStateClient = { ...m, updatedAt: Date.now() };
+          if (
+            localPlayerIdRef.current === m.challengerId &&
+            updated.challengerAnsweredRound < roundIdx
+          ) {
+            updated.challengerAnsweredRound = roundIdx;
+            updated.challengerScore += gain;
+          } else if (
+            localPlayerIdRef.current === m.opponentId &&
+            updated.opponentAnsweredRound < roundIdx
+          ) {
+            updated.opponentAnsweredRound = roundIdx;
+            updated.opponentScore += gain;
+          }
+          if (updated.isBotOpponent && updated.opponentAnsweredRound < roundIdx) {
+            updated.opponentAnsweredRound = roundIdx;
+            updated.opponentScore += Math.random() < 0.65 ? 115 : 0;
+          }
+          if (
+            updated.challengerAnsweredRound >= updated.roundIdx &&
+            updated.opponentAnsweredRound >= updated.roundIdx
+          ) {
+            if (updated.roundIdx + 1 < updated.questions.length) {
+              updated.roundIdx += 1;
+            } else {
+              updated.status = 'FINISHED';
+            }
+          }
+          cloudBridgeRef.current?.publish('versus:update', updated);
+          return updated;
+        })
+      );
+
       if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
         wsRef.current.send(
           JSON.stringify({
@@ -1238,6 +1591,7 @@ export default function App() {
         .then((data) => {
           if (data?.match) {
             upsertVersusMatchState(data.match);
+            cloudBridgeRef.current?.publish('versus:update', data.match);
           }
         })
         .catch(() => {});
@@ -1246,7 +1600,7 @@ export default function App() {
   );
 
   const handleCloseVersusMatch = useCallback(
-    (matchId: string, won?: boolean, mpEarned?: number, scoreEarned?: number) => {
+    (matchId: string, _won?: boolean, mpEarned?: number, scoreEarned?: number) => {
       if (typeof mpEarned === 'number' && mpEarned > 0) {
         setMissionPoints((prev) => prev + mpEarned);
       }
@@ -1293,24 +1647,37 @@ export default function App() {
     setLocalScore((prev) => prev + event.pointsEarned);
     setSessionAnswers((prev) => [...prev, event]);
 
+    cloudBridgeRef.current?.publish('teacher:answer', event);
+
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(
         JSON.stringify({
           type: 'player:answer_teacher_question',
           payload: {
+            playerId: localPlayerIdRef.current,
             answerEvent: event,
             missionPointCost,
           },
         })
       );
     }
+
+    fetch('/api/room/answer', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        playerId: localPlayerIdRef.current,
+        answerEvent: event,
+        missionPointCost,
+      }),
+    }).catch(() => {});
   };
 
   const handleFinishToAnalysis = () => {
+    setRoomStatus('FINISHED');
+    cloudBridgeRef.current?.publish('room:status', { status: 'FINISHED' });
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: 'room:finish_game', payload: {} }));
-    } else {
-      setRoomStatus('FINISHED');
     }
   };
 

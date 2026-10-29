@@ -301,8 +301,13 @@ function loadPersistedStateFromDisk() {
         arenaChatMessages = parsed.arena.chatMessages.slice(-60);
       }
       if (Array.isArray(parsed.arena.players)) {
+        const now = Date.now();
         for (const p of parsed.arena.players) {
           if (p.isRoamingPeer && !ROAMING_PEERS_TEMPLATE.some((t) => t.id === p.id)) {
+            continue;
+          }
+          // Skip stale human players older than 45 seconds on startup
+          if (!p.isRoamingPeer && now - (p.lastUpdated || 0) > 45000) {
             continue;
           }
           arenaPlayers.set(p.id, {
@@ -370,11 +375,13 @@ function serializeArena(requestedPin?: string) {
   const now = Date.now();
   seedBotsInArena();
 
-  // Keep all bots + all human players active within the last 5 minutes in the live arena list
+  // Keep all bots + all human players active within the last 45 seconds in the live arena list
   const activePlayers: ClassMapPlayer[] = [];
-  for (const p of arenaPlayers.values()) {
-    if (p.isRoamingPeer || now - p.lastUpdated < 1000 * 60 * 5) {
+  for (const [id, p] of arenaPlayers.entries()) {
+    if (p.isRoamingPeer || now - p.lastUpdated < 45000) {
       activePlayers.push(p);
+    } else {
+      arenaPlayers.delete(id);
     }
   }
 
@@ -496,12 +503,183 @@ async function startServer() {
   const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
   const clientPlayerMap = new Map<WebSocket, { pin: string; playerId: string }>();
 
-  // Broadcast to ALL connected WebSocket clients in the unified MTsN 14 Halim Arena
-  function broadcastToArena(payload: unknown) {
+  const serverInstanceId = `srv-${Date.now().toString(36).slice(-4)}-${Math.random()
+    .toString(36)
+    .slice(2, 6)}`;
+  const CLOUD_ARENA_TOPIC = 'mtsn14-halim-2d55d160/arena/v4';
+  let cloudBridgeWs: WebSocket | null = null;
+
+  function encodeMqttVarLen(len: number): Buffer {
+    const bytes: number[] = [];
+    let rem = len;
+    do {
+      let encoded = rem % 128;
+      rem = Math.floor(rem / 128);
+      if (rem > 0) encoded = encoded | 128;
+      bytes.push(encoded);
+    } while (rem > 0);
+    return Buffer.from(bytes);
+  }
+
+  function publishToCloudBridge(type: string, payload: unknown) {
+    if (!cloudBridgeWs || cloudBridgeWs.readyState !== WebSocket.OPEN) return;
+    try {
+      const pkt = JSON.stringify({
+        packetId: `${serverInstanceId}-${Date.now().toString(36)}-${Math.random()
+          .toString(36)
+          .slice(2, 6)}`,
+        originTabId: serverInstanceId,
+        type,
+        payload,
+      });
+      const tBuf = Buffer.from(CLOUD_ARENA_TOPIC, 'utf8');
+      const mBuf = Buffer.from(pkt, 'utf8');
+      const body = Buffer.concat([
+        Buffer.from([(tBuf.length >> 8) & 0xff, tBuf.length & 0xff]),
+        tBuf,
+        mBuf,
+      ]);
+      const full = Buffer.concat([Buffer.from([0x30]), encodeMqttVarLen(body.length), body]);
+      cloudBridgeWs.send(full);
+    } catch {
+      // Ignore bridge send error
+    }
+  }
+
+  function connectServerCloudBridge() {
+    try {
+      const ws = new WebSocket('wss://broker.emqx.io:8084/mqtt', ['mqtt']);
+      cloudBridgeWs = ws;
+      ws.on('open', () => {
+        const idBuf = Buffer.from(serverInstanceId, 'utf8');
+        const vh = Buffer.from([0x00, 0x04, 0x4d, 0x51, 0x54, 0x54, 0x04, 0x02, 0x00, 0x3c]);
+        const payload = Buffer.concat([
+          Buffer.from([(idBuf.length >> 8) & 0xff, idBuf.length & 0xff]),
+          idBuf,
+        ]);
+        ws.send(
+          Buffer.concat([Buffer.from([0x10]), encodeMqttVarLen(vh.length + payload.length), vh, payload])
+        );
+
+        const tBuf = Buffer.from(CLOUD_ARENA_TOPIC, 'utf8');
+        const subBody = Buffer.concat([
+          Buffer.from([0x00, 0x01]),
+          Buffer.from([(tBuf.length >> 8) & 0xff, tBuf.length & 0xff]),
+          tBuf,
+          Buffer.from([0x00]),
+        ]);
+        ws.send(Buffer.concat([Buffer.from([0x82]), encodeMqttVarLen(subBody.length), subBody]));
+      });
+
+      ws.on('message', (data: Buffer) => {
+        try {
+          const buf = Buffer.from(data);
+          let offset = 0;
+          while (offset < buf.length) {
+            const header = buf[offset++];
+            let mult = 1;
+            let remLen = 0;
+            let b = 0;
+            do {
+              if (offset >= buf.length) return;
+              b = buf[offset++];
+              remLen += (b & 127) * mult;
+              mult *= 128;
+            } while ((b & 128) !== 0);
+            const packetEnd = offset + remLen;
+            if (packetEnd > buf.length) return;
+
+            if (header >> 4 === 3) {
+              const tLen = (buf[offset] << 8) | buf[offset + 1];
+              const jsonStr = buf.slice(offset + 2 + tLen, packetEnd).toString('utf8');
+              const pkt = JSON.parse(jsonStr);
+              if (pkt && pkt.originTabId !== serverInstanceId) {
+                if (pkt.type === 'player:moved' && pkt.payload?.playerId) {
+                  const pl = pkt.payload;
+                  upsertPlayerInArena({
+                    playerId: pl.playerId,
+                    playerName: pl.name,
+                    studentClass: pl.studentClass,
+                    role: pl.role,
+                    characterPreset: pl.characterPreset,
+                    color: pl.color,
+                    x: pl.x,
+                    y: pl.y,
+                    vx: pl.vx,
+                    vy: pl.vy,
+                    facingAngle: pl.facingAngle,
+                    jumpY: pl.jumpY,
+                    score: pl.score,
+                    missionPoints: pl.missionPoints,
+                    collectedItemsCount: pl.collectedItemsCount,
+                    answeredQuestionIds: pl.answeredQuestionIds,
+                  });
+                  broadcastToLocalWs({ type: 'player:moved', payload: pl });
+                } else if (pkt.type === 'player:left' && pkt.payload?.playerId) {
+                  arenaPlayers.delete(pkt.payload.playerId);
+                  broadcastToLocalWs({
+                    type: 'room:state',
+                    payload: serializeArena(arenaPin),
+                  });
+                } else if (pkt.type === 'chat:message' && pkt.payload?.id) {
+                  if (!arenaChatMessages.some((m) => m.id === pkt.payload.id)) {
+                    arenaChatMessages.push(pkt.payload);
+                    if (arenaChatMessages.length > 60) {
+                      arenaChatMessages = arenaChatMessages.slice(-60);
+                    }
+                    broadcastToLocalWs({ type: 'chat:message', payload: pkt.payload });
+                  }
+                } else if (pkt.type === 'versus:update' && pkt.payload?.id) {
+                  arenaVersusMatches.set(pkt.payload.id, pkt.payload);
+                  broadcastToLocalWs({ type: 'versus:update', payload: pkt.payload });
+                }
+              }
+            }
+            offset = packetEnd;
+          }
+        } catch {
+          // Ignore malformed cloud packet
+        }
+      });
+
+      ws.on('close', () => {
+        setTimeout(connectServerCloudBridge, 3000);
+      });
+      ws.on('error', () => {});
+    } catch {
+      // Ignore bridge error
+    }
+  }
+
+  connectServerCloudBridge();
+  setInterval(() => {
+    if (cloudBridgeWs && cloudBridgeWs.readyState === WebSocket.OPEN) {
+      cloudBridgeWs.send(Buffer.from([0xc0, 0x00]));
+    }
+  }, 25000);
+
+  function broadcastToLocalWs(payload: unknown) {
     const message = JSON.stringify(payload);
     for (const client of wss.clients) {
       if (client.readyState === WebSocket.OPEN) {
         client.send(message);
+      }
+    }
+  }
+
+  // Broadcast to ALL connected WebSocket clients AND Cross-Container Cloud Bridge
+  function broadcastToArena(payload: any) {
+    broadcastToLocalWs(payload);
+    if (payload && typeof payload === 'object' && payload.type) {
+      if (
+        payload.type === 'player:moved' &&
+        !payload.payload?.isRoamingPeer
+      ) {
+        publishToCloudBridge('player:moved', payload.payload);
+      } else if (payload.type === 'chat:message') {
+        publishToCloudBridge('chat:message', payload.payload);
+      } else if (payload.type === 'versus:update') {
+        publishToCloudBridge('versus:update', payload.payload);
       }
     }
   }
@@ -631,7 +809,7 @@ async function startServer() {
   app.get('/api/bootstrap', (_req, res) => {
     const now = Date.now();
     const humanCount = Array.from(arenaPlayers.values()).filter(
-      (p) => !p.isRoamingPeer && now - p.lastUpdated < 1000 * 60 * 5
+      (p) => !p.isRoamingPeer && now - p.lastUpdated < 45000
     ).length;
 
     res.json({
@@ -802,6 +980,49 @@ async function startServer() {
       room: serializeArena(pin),
       player: p,
     });
+  });
+
+  // Explicit Leave Room Endpoint (removes old character when switching students)
+  app.post('/api/room/leave', (req, res) => {
+    const { playerId } = req.body || {};
+    if (playerId && arenaPlayers.has(playerId)) {
+      arenaPlayers.delete(playerId);
+      schedulePersistStateToDisk();
+      publishToCloudBridge('player:left', { playerId });
+      broadcastToLocalWs({ type: 'room:state', payload: serializeArena(arenaPin) });
+    }
+    res.json({ ok: true });
+  });
+
+  // HTTP Endpoint for Teacher Question Answer Submission
+  app.post('/api/room/answer', (req, res) => {
+    const { playerId, answerEvent, missionPointCost } = req.body || {};
+    const pid = String(playerId || answerEvent?.playerId || '');
+    const p = arenaPlayers.get(pid);
+    if (p && answerEvent && answerEvent.questionId) {
+      if (!p.answeredQuestionIds.includes(answerEvent.questionId)) {
+        p.score += Number(answerEvent.pointsEarned) || 0;
+        p.answeredQuestionIds.push(answerEvent.questionId);
+        p.answeredCount = p.answeredQuestionIds.length;
+        p.lastUpdated = Date.now();
+        if (typeof missionPointCost === 'number') {
+          p.missionPoints = Math.max(0, p.missionPoints - missionPointCost);
+        }
+        const recorded: PlayerAnswerEvent = {
+          ...answerEvent,
+          playerId: p.id,
+          playerName: `${p.name} (${p.studentClass})`,
+          playerTotalScoreAfter: p.score,
+        };
+        globalAnswerHistory.push(recorded);
+        schedulePersistStateToDisk();
+        broadcastToArena({ type: 'room:state', payload: serializeArena(arenaPin) });
+      }
+    } else if (answerEvent && answerEvent.questionId) {
+      globalAnswerHistory.push(answerEvent);
+      schedulePersistStateToDisk();
+    }
+    res.json({ ok: true, room: serializeArena(arenaPin) });
   });
 
   // Real-Time Chat Endpoint
@@ -1174,7 +1395,9 @@ async function startServer() {
           );
         } else if (type === 'player:answer_teacher_question') {
           const meta = clientPlayerMap.get(ws);
-          const pid = String(payload?.playerId || meta?.playerId || '');
+          const pid = String(
+            payload?.playerId || payload?.answerEvent?.playerId || meta?.playerId || ''
+          );
           const p = arenaPlayers.get(pid);
           if (!p) return;
 

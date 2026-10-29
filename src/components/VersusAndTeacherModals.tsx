@@ -438,7 +438,9 @@ export const TeacherQuestModal: React.FC<TeacherQuestModalProps> = ({
       setQuestionStartMs(performance.now());
       setLastResult(null);
     }
-  }, [isOpen, teacherStationIndex, questions, answeredQuestionIds]);
+    // Only initialize question selection when opening the modal or switching teacher post station
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, teacherStationIndex]);
 
   if (!isOpen) return null;
 
