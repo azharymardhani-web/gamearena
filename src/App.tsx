@@ -14,7 +14,11 @@ import {
 } from './components/CyberArenaCanvas';
 import { MaterialManagerModal } from './components/MaterialManagerModal';
 import { ItemAnalysisView } from './components/ItemAnalysisView';
-import { TeacherQuestModal, VersusDuelModal } from './components/VersusAndTeacherModals';
+import {
+  TeacherQuestModal,
+  VersusDuelModal,
+  VersusMatchStateClient,
+} from './components/VersusAndTeacherModals';
 import { soundEngine } from './utils/soundEngine';
 import {
   Volume2,
@@ -39,6 +43,9 @@ import {
   Navigation,
   RotateCcw,
   CheckCircle2,
+  MessageSquare,
+  Send,
+  X,
 } from 'lucide-react';
 
 interface ActiveRoomSummary {
@@ -49,6 +56,17 @@ interface ActiveRoomSummary {
   studentCount: number;
   totalPlayers: number;
   categoryFilter: string;
+}
+
+interface RoomChatMessageClient {
+  id: string;
+  senderId: string;
+  senderName: string;
+  senderClass: string;
+  senderRole: 'TEACHER' | 'STUDENT';
+  senderColor: string;
+  text: string;
+  timestamp: number;
 }
 
 interface SavedRealtimeSession {
@@ -72,6 +90,14 @@ interface SavedRealtimeSession {
 
 const SESSION_STORAGE_KEY = 'mtsn14_halim_realtime_session_v2';
 
+const QUICK_CHAT_PHRASES = [
+  'Halo semua! 👋',
+  'Kumpul di Lapangan Upacara!',
+  'Ayo Duel Versus 1v1! ⚔️',
+  'Pak Azhary ada di Lab Komputer!',
+  'GGWP Teman MTsN 14! 🔥',
+];
+
 function normalizePin(raw: string): string {
   const cleaned = String(raw || '')
     .toUpperCase()
@@ -89,6 +115,37 @@ function loadSavedSession(): SavedRealtimeSession | null {
   } catch {
     return null;
   }
+}
+
+// Merge incoming player list while preserving fresher WebSocket movement timestamps
+function mergePlayersPreservingFreshMovement(
+  prev: MapPlayerEntity[],
+  incoming: MapPlayerEntity[]
+): MapPlayerEntity[] {
+  const prevMap = new Map<string, MapPlayerEntity>();
+  for (const p of prev) prevMap.set(p.id, p);
+
+  return incoming.map((inc) => {
+    const existing = prevMap.get(inc.id);
+    if (
+      existing &&
+      existing.lastUpdated &&
+      inc.lastUpdated &&
+      existing.lastUpdated > inc.lastUpdated
+    ) {
+      return {
+        ...inc,
+        x: existing.x,
+        y: existing.y,
+        vx: existing.vx,
+        vy: existing.vy,
+        facingAngle: existing.facingAngle,
+        jumpY: existing.jumpY,
+        lastUpdated: existing.lastUpdated,
+      };
+    }
+    return inc;
+  });
 }
 
 export default function App() {
@@ -125,8 +182,26 @@ export default function App() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [copiedPin, setCopiedPin] = useState<boolean>(false);
 
-  // Collapsible Bottom Dock State ("Zen / Cinema Mode")
+  // Collapsible Bottom Dock State & Mobile Peers Drawer
   const [isDockCollapsed, setIsDockCollapsed] = useState<boolean>(false);
+  const [isMobilePeersOpen, setIsMobilePeersOpen] = useState<boolean>(false);
+
+  // Roblox-Style Open-World Chat State
+  const [chatMessages, setChatMessages] = useState<RoomChatMessageClient[]>([]);
+  const [isChatOpen, setIsChatOpen] = useState<boolean>(false);
+  const [chatInput, setChatInput] = useState<string>('');
+  const [unreadChatCount, setUnreadChatCount] = useState<number>(0);
+  const [localChatBubble, setLocalChatBubble] = useState<{
+    text: string;
+    timestamp: number;
+  } | null>(null);
+  const chatEndRef = useRef<HTMLDivElement | null>(null);
+  const lastSeenChatIdRef = useRef<string>('');
+
+  // Real-Time Mutual-Consent Versus Duel State
+  const [versusMatches, setVersusMatches] = useState<VersusMatchStateClient[]>([]);
+  const [dismissedMatchIds, setDismissedMatchIds] = useState<Set<string>>(() => new Set());
+  const [openVersusModalMatchId, setOpenVersusModalMatchId] = useState<string | null>(null);
 
   // Materials & Question Bank State
   const [materials, setMaterials] = useState<InformaticsMaterial[]>(() => {
@@ -154,7 +229,7 @@ export default function App() {
       teacherName: 'Azhary Mardhani, S.Kom',
       status: 'PLAYING',
       studentCount: 1,
-      totalPlayers: 5,
+      totalPlayers: 3,
       categoryFilter: 'Semua Materi',
     },
   ]);
@@ -168,7 +243,7 @@ export default function App() {
   const [classPlayers, setClassPlayers] = useState<MapPlayerEntity[]>([]);
   const [sessionAnswers, setSessionAnswers] = useState<PlayerAnswerEvent[]>([]);
 
-  // Local Open-World Mission Progress (Restored from Real-Time Saved Session!)
+  // Local Open-World Mission Progress
   const [missionPoints, setMissionPoints] = useState<number>(
     initialSession?.missionPoints ?? 100
   );
@@ -180,7 +255,7 @@ export default function App() {
   );
   const [localScore, setLocalScore] = useState<number>(initialSession?.localScore ?? 0);
 
-  // Teleport / Spawn command (Restores exact last map coordinate on reload!)
+  // Teleport / Spawn command
   const [teleportCommand, setTeleportCommand] = useState<{
     x: number;
     y: number;
@@ -195,7 +270,6 @@ export default function App() {
   const [nearbyTeacherPost, setNearbyTeacherPost] = useState<TeacherPostLocation | null>(null);
   const [nearbyVersusTarget, setNearbyVersusTarget] = useState<MapPlayerEntity | null>(null);
   const [activeTeacherModalIndex, setActiveTeacherModalIndex] = useState<number | null>(null);
-  const [activeVersusOpponent, setActiveVersusOpponent] = useState<MapPlayerEntity | null>(null);
   const [pickupBanner, setPickupBanner] = useState<{ itemName: string; mpGain: number } | null>(
     null
   );
@@ -219,19 +293,36 @@ export default function App() {
   const localPlayerIdRef = useRef<string>(
     initialSession?.playerId || `p-${Math.random().toString(36).slice(2, 9)}`
   );
-  const latestPosRef = useRef<{ x: number; y: number; vx: number; vy: number }>({
+  const latestPosRef = useRef<{
+    x: number;
+    y: number;
+    vx: number;
+    vy: number;
+    facingAngle: number;
+    jumpY: number;
+  }>({
     x: initialSession?.x ?? 1200,
     y: initialSession?.y ?? 780,
     vx: 0,
     vy: 0,
+    facingAngle: Math.PI,
+    jumpY: 0,
   });
 
-  // Hide the "Sesi Dipulihkan Otomatis" banner after 5 seconds
   useEffect(() => {
     if (!resumedSessionToast) return;
     const t = setTimeout(() => setResumedSessionToast(false), 5500);
     return () => clearTimeout(t);
   }, [resumedSessionToast]);
+
+  useEffect(() => {
+    if (isChatOpen) {
+      setUnreadChatCount(0);
+      setTimeout(() => {
+        chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }, 60);
+    }
+  }, [isChatOpen, chatMessages.length]);
 
   // Save Real-Time Snapshot to localStorage whenever state or position changes
   const persistRealtimeSnapshot = useCallback(
@@ -283,7 +374,6 @@ export default function App() {
     ]
   );
 
-  // Trigger real-time save on any state update + beforeunload / visibilitychange
   useEffect(() => {
     persistRealtimeSnapshot();
   }, [persistRealtimeSnapshot]);
@@ -338,7 +428,6 @@ export default function App() {
     return () => clearInterval(timer);
   }, [fetchBootstrap]);
 
-  // Helper to merge server-side restored player progress (in case server has even newer/additional answered questions)
   const applyRestoredServerPlayer = useCallback(
     (serverPlayer?: {
       x?: number;
@@ -368,6 +457,21 @@ export default function App() {
     },
     []
   );
+
+  // Merge incoming versus match update
+  const upsertVersusMatchState = useCallback((match: VersusMatchStateClient) => {
+    setVersusMatches((prev) => {
+      const filtered = prev.filter((m) => m.id !== match.id);
+      return [...filtered, match];
+    });
+    if (
+      (match.challengerId === localPlayerIdRef.current ||
+        match.opponentId === localPlayerIdRef.current) &&
+      match.status === 'IN_PROGRESS'
+    ) {
+      setOpenVersusModalMatchId(match.id);
+    }
+  }, []);
 
   // Connect & Auto-Reconnect to Real-Time Classroom WebSocket Server
   useEffect(() => {
@@ -415,8 +519,16 @@ export default function App() {
             setRoomStatus(room.status);
             setSelectedCategory(room.categoryFilter || 'Semua Materi');
             setCurrentQuestionIndex(room.currentQuestionIndex || 0);
-            setClassPlayers(room.players || []);
+            setClassPlayers((prev) =>
+              mergePlayersPreservingFreshMovement(prev, room.players || [])
+            );
             setSessionAnswers(room.answers || []);
+            if (Array.isArray(room.chatMessages)) {
+              setChatMessages(room.chatMessages);
+            }
+            if (Array.isArray(room.versusMatches)) {
+              setVersusMatches(room.versusMatches);
+            }
             applyRestoredServerPlayer(room.player);
             if (typeof room.spawnX === 'number' && typeof room.spawnY === 'number') {
               latestPosRef.current.x = room.spawnX;
@@ -440,8 +552,16 @@ export default function App() {
             });
             setSelectedCategory(room.categoryFilter || 'Semua Materi');
             setCurrentQuestionIndex(room.currentQuestionIndex || 0);
-            setClassPlayers(room.players || []);
+            setClassPlayers((prev) =>
+              mergePlayersPreservingFreshMovement(prev, room.players || [])
+            );
             setSessionAnswers(room.answers || []);
+            if (Array.isArray(room.chatMessages)) {
+              setChatMessages(room.chatMessages);
+            }
+            if (Array.isArray(room.versusMatches)) {
+              setVersusMatches(room.versusMatches);
+            }
           } else if (msg.type === 'player:moved') {
             const {
               playerId,
@@ -453,10 +573,15 @@ export default function App() {
               y,
               vx,
               vy,
+              facingAngle,
+              jumpY,
               score,
               missionPoints: mp,
               collectedItemsCount: itemsCount,
               answeredCount,
+              lastChatText,
+              lastChatTime,
+              lastUpdated,
             } = msg.payload;
 
             setClassPlayers((prev) => {
@@ -475,6 +600,8 @@ export default function App() {
                     y: y ?? 780,
                     vx: vx ?? 0,
                     vy: vy ?? 0,
+                    facingAngle: facingAngle ?? Math.PI,
+                    jumpY: jumpY ?? 0,
                     score: score ?? 0,
                     missionPoints: mp ?? 100,
                     collectedItemsCount: itemsCount ?? 0,
@@ -483,6 +610,9 @@ export default function App() {
                     hp: 100,
                     currentSector: null,
                     lockedOption: null,
+                    lastChatText,
+                    lastChatTime,
+                    lastUpdated: lastUpdated || Date.now(),
                     isRoamingPeer: false,
                   },
                 ];
@@ -499,14 +629,55 @@ export default function App() {
                       y,
                       vx,
                       vy,
+                      facingAngle:
+                        typeof facingAngle === 'number' ? facingAngle : p.facingAngle,
+                      jumpY: typeof jumpY === 'number' ? jumpY : p.jumpY,
                       score: score ?? p.score,
                       missionPoints: mp ?? p.missionPoints,
                       collectedItemsCount: itemsCount ?? p.collectedItemsCount,
                       answeredCount: answeredCount ?? p.answeredCount,
+                      lastChatText: lastChatText ?? p.lastChatText,
+                      lastChatTime: lastChatTime ?? p.lastChatTime,
+                      lastUpdated: lastUpdated || Date.now(),
                     }
                   : p
               );
             });
+          } else if (msg.type === 'chat:message') {
+            const incomingChat = msg.payload as RoomChatMessageClient;
+            if (incomingChat && incomingChat.id) {
+              setChatMessages((prev) => {
+                if (prev.some((c) => c.id === incomingChat.id)) return prev;
+                return [...prev, incomingChat].slice(-60);
+              });
+              // Update overhead speech bubble on sender's 3D avatar immediately
+              setClassPlayers((prev) =>
+                prev.map((p) =>
+                  p.id === incomingChat.senderId
+                    ? {
+                        ...p,
+                        lastChatText: incomingChat.text,
+                        lastChatTime: incomingChat.timestamp,
+                      }
+                    : p
+                )
+              );
+              if (incomingChat.senderId !== localPlayerIdRef.current) {
+                soundEngine.playPickupData();
+                setUnreadChatCount((c) => c + 1);
+              }
+            }
+          } else if (msg.type === 'versus:update') {
+            const match = msg.payload as VersusMatchStateClient;
+            if (match && match.id) {
+              upsertVersusMatchState(match);
+              if (
+                match.status === 'PENDING_CONSENT' &&
+                match.opponentId === localPlayerIdRef.current
+              ) {
+                soundEngine.playDash();
+              }
+            }
           } else if (msg.type === 'room:error') {
             setAuthError(msg.payload?.message || 'Kode Room tidak ditemukan.');
             soundEngine.playWrongAnswer();
@@ -543,9 +714,10 @@ export default function App() {
     collectedItemsCount,
     answeredQuestionIds,
     applyRestoredServerPlayer,
+    upsertVersusMatchState,
   ]);
 
-  // Dual-Transport HTTP Heartbeat & Real-Time Auto-Save Sync (Every 600ms while joinedRoom is true)
+  // Dual-Transport HTTP Heartbeat & Real-Time Sync (Every 450ms while joinedRoom is true)
   useEffect(() => {
     if (!joinedRoom || !activePin) return;
 
@@ -565,6 +737,8 @@ export default function App() {
           y: latestPosRef.current.y,
           vx: latestPosRef.current.vx,
           vy: latestPosRef.current.vy,
+          facingAngle: latestPosRef.current.facingAngle,
+          jumpY: latestPosRef.current.jumpY,
           score: localScore,
           missionPoints,
           collectedItemsCount,
@@ -575,9 +749,26 @@ export default function App() {
         .then((r) => (r.ok ? r.json() : null))
         .then((data) => {
           if (data?.room) {
-            setClassPlayers(data.room.players || []);
+            setClassPlayers((prev) =>
+              mergePlayersPreservingFreshMovement(prev, data.room.players || [])
+            );
             if (Array.isArray(data.room.answers) && data.room.answers.length > 0) {
               setSessionAnswers(data.room.answers);
+            }
+            if (Array.isArray(data.room.chatMessages)) {
+              const msgs = data.room.chatMessages as RoomChatMessageClient[];
+              setChatMessages(msgs);
+              const newest = msgs[msgs.length - 1];
+              if (
+                newest &&
+                newest.id !== lastSeenChatIdRef.current &&
+                newest.senderId !== localPlayerIdRef.current
+              ) {
+                lastSeenChatIdRef.current = newest.id;
+              }
+            }
+            if (Array.isArray(data.room.versusMatches)) {
+              setVersusMatches(data.room.versusMatches);
             }
           }
           if (data?.player) {
@@ -588,7 +779,7 @@ export default function App() {
     };
 
     syncNow();
-    const interval = setInterval(syncNow, 600);
+    const interval = setInterval(syncNow, 450);
     return () => clearInterval(interval);
   }, [
     joinedRoom,
@@ -647,6 +838,12 @@ export default function App() {
           setSessionAnswers(data.room.answers || []);
           setRoomStatus(data.room.status || 'PLAYING');
           setSelectedCategory(data.room.categoryFilter || 'Semua Materi');
+          if (Array.isArray(data.room.chatMessages)) {
+            setChatMessages(data.room.chatMessages);
+          }
+          if (Array.isArray(data.room.versusMatches)) {
+            setVersusMatches(data.room.versusMatches);
+          }
         }
         if (data?.player) {
           applyRestoredServerPlayer(data.player);
@@ -752,7 +949,7 @@ export default function App() {
       // ignore
     }
     localPlayerIdRef.current = `p-${Math.random().toString(36).slice(2, 9)}`;
-    latestPosRef.current = { x: 1200, y: 780, vx: 0, vy: 0 };
+    latestPosRef.current = { x: 1200, y: 780, vx: 0, vy: 0, facingAngle: Math.PI, jumpY: 0 };
     setStudentName('');
     setLocalScore(0);
     setMissionPoints(100);
@@ -767,11 +964,13 @@ export default function App() {
       y: number,
       vx: number,
       vy: number,
+      facingAngle: number,
+      jumpY: number,
       scoreBonus = 0,
       missionPointsDelta = 0,
       collectedDelta = 0
     ) => {
-      latestPosRef.current = { x, y, vx, vy };
+      latestPosRef.current = { x, y, vx, vy, facingAngle, jumpY };
 
       if (scoreBonus !== 0) {
         setLocalScore((prev) => prev + scoreBonus);
@@ -800,6 +999,8 @@ export default function App() {
               y,
               vx,
               vy,
+              facingAngle,
+              jumpY,
               scoreBonus,
               missionPointsDelta,
               collectedDelta,
@@ -809,6 +1010,187 @@ export default function App() {
       }
     },
     [activePin, studentName, studentClass, selectedPresetId, avatarColor, persistRealtimeSnapshot]
+  );
+
+  // Send Roblox-Style Chat Message + Trigger 3D Overhead Speech Bubble
+  const handleSendChatMessage = useCallback(
+    (rawText: string) => {
+      const cleanText = rawText.trim().slice(0, 140);
+      if (!cleanText) return;
+
+      const now = Date.now();
+      setLocalChatBubble({ text: cleanText, timestamp: now });
+      setChatInput('');
+      soundEngine.playPickupData();
+
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(
+          JSON.stringify({
+            type: 'chat:send',
+            payload: {
+              pin: activePin,
+              senderId: localPlayerIdRef.current,
+              senderName: studentName || 'Siswa MTsN 14',
+              senderClass: studentClass,
+              senderRole: localRole,
+              senderColor: avatarColor,
+              text: cleanText,
+            },
+          })
+        );
+      }
+
+      fetch('/api/room/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pin: activePin,
+          senderId: localPlayerIdRef.current,
+          senderName: studentName || 'Siswa MTsN 14',
+          senderClass: studentClass,
+          senderRole: localRole,
+          senderColor: avatarColor,
+          text: cleanText,
+        }),
+      })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (data?.message) {
+            setChatMessages((prev) => {
+              if (prev.some((c) => c.id === data.message.id)) return prev;
+              return [...prev, data.message].slice(-60);
+            });
+          }
+        })
+        .catch(() => {});
+    },
+    [activePin, studentName, studentClass, localRole, avatarColor]
+  );
+
+  // Send Real-Time Mutual-Consent Versus Invitation
+  const handleSendVersusInvite = useCallback(
+    (opponent: MapPlayerEntity) => {
+      soundEngine.playDash();
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(
+          JSON.stringify({
+            type: 'versus:invite',
+            payload: {
+              pin: activePin,
+              challengerId: localPlayerIdRef.current,
+              challengerName: studentName || 'Siswa MTsN 14',
+              challengerClass: studentClass,
+              opponentId: opponent.id,
+            },
+          })
+        );
+      }
+      fetch('/api/versus/invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pin: activePin,
+          challengerId: localPlayerIdRef.current,
+          challengerName: studentName || 'Siswa MTsN 14',
+          challengerClass: studentClass,
+          opponentId: opponent.id,
+        }),
+      })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (data?.match) {
+            upsertVersusMatchState(data.match);
+            setOpenVersusModalMatchId(data.match.id);
+          }
+        })
+        .catch(() => {});
+    },
+    [activePin, studentName, studentClass, upsertVersusMatchState]
+  );
+
+  const handleRespondVersusConsent = useCallback(
+    (matchId: string, accept: boolean) => {
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(
+          JSON.stringify({
+            type: 'versus:respond',
+            payload: { matchId, accept },
+          })
+        );
+      }
+      fetch('/api/versus/respond', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ matchId, accept }),
+      })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (data?.match) {
+            upsertVersusMatchState(data.match);
+            if (accept) {
+              setOpenVersusModalMatchId(data.match.id);
+            }
+          }
+        })
+        .catch(() => {});
+    },
+    [upsertVersusMatchState]
+  );
+
+  const handleSubmitVersusRoundAnswer = useCallback(
+    (matchId: string, roundIdx: number, selectedIndex: number, timeLeftSec: number) => {
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(
+          JSON.stringify({
+            type: 'versus:answer',
+            payload: {
+              matchId,
+              playerId: localPlayerIdRef.current,
+              roundIdx,
+              selectedIndex,
+              timeLeftSec,
+            },
+          })
+        );
+      }
+      fetch('/api/versus/answer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          matchId,
+          playerId: localPlayerIdRef.current,
+          roundIdx,
+          selectedIndex,
+          timeLeftSec,
+        }),
+      })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (data?.match) {
+            upsertVersusMatchState(data.match);
+          }
+        })
+        .catch(() => {});
+    },
+    [upsertVersusMatchState]
+  );
+
+  const handleCloseVersusMatch = useCallback(
+    (matchId: string, won?: boolean, mpEarned?: number, scoreEarned?: number) => {
+      if (typeof mpEarned === 'number' && mpEarned > 0) {
+        setMissionPoints((prev) => prev + mpEarned);
+      }
+      if (typeof scoreEarned === 'number' && scoreEarned > 0) {
+        setLocalScore((prev) => prev + scoreEarned);
+      }
+      setDismissedMatchIds((prev) => {
+        const next = new Set(prev);
+        next.add(matchId);
+        return next;
+      });
+      setOpenVersusModalMatchId((prev) => (prev === matchId ? null : prev));
+    },
+    []
   );
 
   const handleTeleportToPosition = (targetX: number, targetY: number) => {
@@ -830,24 +1212,6 @@ export default function App() {
       setPickupBanner((prev) => (prev?.itemName === itemName ? null : prev));
     }, 3200);
   }, []);
-
-  const handleCompleteVersus = (won: boolean, mpEarned: number, scoreEarned: number) => {
-    setMissionPoints((prev) => prev + mpEarned);
-    setLocalScore((prev) => prev + scoreEarned);
-
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(
-        JSON.stringify({
-          type: 'player:versus_complete',
-          payload: {
-            won,
-            mpEarned,
-            scoreEarned,
-          },
-        })
-      );
-    }
-  };
 
   const handleSubmitTeacherAnswer = (event: PlayerAnswerEvent, missionPointCost: number) => {
     setMissionPoints((prev) => Math.max(0, prev - missionPointCost));
@@ -931,9 +1295,41 @@ export default function App() {
     fetch(`/api/questions/${id}`, { method: 'DELETE' }).catch(() => {});
   };
 
+  // Active Versus Match for this student
+  const activeMyVersusMatch = useMemo(() => {
+    const myMatches = versusMatches
+      .filter(
+        (m) =>
+          !dismissedMatchIds.has(m.id) &&
+          (m.challengerId === localPlayerIdRef.current || m.opponentId === localPlayerIdRef.current)
+      )
+      .sort((a, b) => b.updatedAt - a.updatedAt);
+
+    if (openVersusModalMatchId) {
+      const explicit = myMatches.find((m) => m.id === openVersusModalMatchId);
+      if (explicit) return explicit;
+    }
+    const inProgressOrPending = myMatches.find(
+      (m) => m.status === 'IN_PROGRESS' || m.status === 'PENDING_CONSENT'
+    );
+    return inProgressOrPending || null;
+  }, [versusMatches, dismissedMatchIds, openVersusModalMatchId]);
+
+  // Incoming Consent Invitation Banner (when another student invites this student!)
+  const incomingVersusInvite = useMemo(() => {
+    return (
+      versusMatches.find(
+        (m) =>
+          !dismissedMatchIds.has(m.id) &&
+          m.status === 'PENDING_CONSENT' &&
+          m.opponentId === localPlayerIdRef.current
+      ) || null
+    );
+  }, [versusMatches, dismissedMatchIds]);
+
   // Keyboard shortcuts:
   // Tab (Toggle Camera), H (Toggle Collapsible Bottom Dock),
-  // F (Interact with Teacher Post), V (Challenge Nearby Student to 1v1 Versus)
+  // F (Interact with Teacher Post), V (Challenge Nearby Student to Mutual-Consent 1v1 Versus)
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName;
@@ -950,21 +1346,27 @@ export default function App() {
         e.preventDefault();
         soundEngine.playDash();
         setActiveTeacherModalIndex(nearbyTeacherPost.index);
-      } else if (e.code === 'KeyV' && nearbyVersusTarget && !activeVersusOpponent) {
+      } else if (e.code === 'KeyV' && nearbyVersusTarget && !activeMyVersusMatch) {
         e.preventDefault();
-        soundEngine.playDash();
-        setActiveVersusOpponent(nearbyVersusTarget);
+        handleSendVersusInvite(nearbyVersusTarget);
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [joinedRoom, nearbyTeacherPost, nearbyVersusTarget, activeTeacherModalIndex, activeVersusOpponent]);
+  }, [
+    joinedRoom,
+    nearbyTeacherPost,
+    nearbyVersusTarget,
+    activeTeacherModalIndex,
+    activeMyVersusMatch,
+    handleSendVersusInvite,
+  ]);
 
   const myPlayerRecord = classPlayers.find((p) => p.id === localPlayerIdRef.current);
   const displayedScore = Math.max(localScore, myPlayerRecord?.score || 0);
   const displayedMp = myPlayerRecord?.missionPoints ?? missionPoints;
 
-  // Real online classmates in the same room (excluding self and roaming NPCs)
+  // Real online classmates in the same room (excluding self and training bots)
   const onlineClassmates = useMemo(
     () =>
       classPlayers.filter((p) => p.id !== localPlayerIdRef.current && !p.isRoamingPeer),
@@ -988,6 +1390,7 @@ export default function App() {
         materials={materials}
         currentQuestion={currentQuestion}
         teleportCommand={teleportCommand}
+        localChatBubble={localChatBubble}
         onEmitLocalMove={handleEmitLocalMove}
         onNearbyTeacherPostChange={setNearbyTeacherPost}
         onNearbyVersusTargetChange={setNearbyVersusTarget}
@@ -999,34 +1402,34 @@ export default function App() {
           2. PORTAL MASUK KAMPUS MTsN 14 HALIM & PEMILIHAN KARAKTER 3D
          ==================================================================== */}
       {!joinedRoom && (
-        <div className="fixed inset-0 z-20 flex flex-col justify-between p-4 md:p-7 pointer-events-none overflow-y-auto">
+        <div className="fixed inset-0 z-20 flex flex-col justify-between p-2.5 sm:p-4 md:p-7 pointer-events-none overflow-y-auto">
           {/* Top Bar: School Identity & Teacher Tools */}
-          <div className="flex flex-wrap items-center justify-between gap-3 pointer-events-auto">
-            <div className="text-xs text-slate-200 font-semibold bg-slate-900/95 px-3.5 py-2 rounded-lg border border-slate-700">
-              MTs Negeri 14 Jakarta Timur (Kampus Halim Perdanakusuma) · Azhary Mardhani, S.Kom
+          <div className="flex flex-wrap items-center justify-between gap-2 pointer-events-auto">
+            <div className="text-[10px] sm:text-xs text-slate-200 font-semibold bg-slate-900/95 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-lg border border-slate-700 truncate max-w-full">
+              MTsN 14 Jakarta Timur (Halim PK) · Azhary Mardhani, S.Kom
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 sm:gap-2">
               <button
                 onClick={() => setIsMaterialModalOpen(true)}
-                className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-100 bg-slate-900/95 hover:bg-slate-800 border border-slate-700 rounded-lg transition-colors whitespace-nowrap shrink-0"
+                className="flex items-center gap-1 px-2.5 sm:px-3.5 py-1.5 sm:py-2 text-[11px] sm:text-xs font-semibold text-slate-100 bg-slate-900/95 hover:bg-slate-800 border border-slate-700 rounded-lg transition-colors whitespace-nowrap shrink-0"
               >
                 <BookOpen className="w-3.5 h-3.5 text-sky-400" />
-                Kelola Materi & Soal ({questions.length})
+                <span>Materi & Soal ({questions.length})</span>
               </button>
 
               <button
                 onClick={() => setIsAnalysisPreviewOpen(true)}
-                className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-100 bg-slate-900/95 hover:bg-slate-800 border border-slate-700 rounded-lg transition-colors whitespace-nowrap shrink-0"
+                className="flex items-center gap-1 px-2.5 sm:px-3.5 py-1.5 sm:py-2 text-[11px] sm:text-xs font-semibold text-slate-100 bg-slate-900/95 hover:bg-slate-800 border border-slate-700 rounded-lg transition-colors whitespace-nowrap shrink-0"
               >
                 <BarChart3 className="w-3.5 h-3.5 text-emerald-400" />
-                Analisis Butir Soal
+                <span>Analisis Soal</span>
               </button>
 
               <button
                 onClick={() => setIsMuted(soundEngine.toggleMute())}
                 aria-label="Toggle Suara"
-                className="p-2 text-slate-200 bg-slate-900/95 hover:bg-slate-800 border border-slate-700 rounded-lg transition-colors"
+                className="p-1.5 sm:p-2 text-slate-200 bg-slate-900/95 hover:bg-slate-800 border border-slate-700 rounded-lg transition-colors"
               >
                 {isMuted ? (
                   <VolumeX className="w-4 h-4 text-rose-400" />
@@ -1038,10 +1441,10 @@ export default function App() {
           </div>
 
           {/* Center Hero Lockup + Character & Room Code Gate Card */}
-          <div className="my-auto mx-auto w-full max-w-3xl flex flex-col items-center text-center pointer-events-auto space-y-3 py-2">
+          <div className="my-auto mx-auto w-full max-w-3xl flex flex-col items-center text-center pointer-events-auto space-y-2 sm:space-y-3 py-1.5 sm:py-2">
             <svg
               viewBox="0 0 740 104"
-              className="w-full max-w-xl h-auto drop-shadow"
+              className="w-full max-w-[320px] sm:max-w-xl h-auto drop-shadow"
               role="img"
               aria-label="MTs Negeri 14 Jakarta Timur Halim 3D Open World Title Lockup"
             >
@@ -1118,14 +1521,14 @@ export default function App() {
                 fontSize="11.5"
                 letterSpacing="1.2"
               >
-                JL. ELANG KOMP. RAJAWALI HALIM · GURU INFORMATIKA: AZHARY MARDHANI, S.KOM
+                OPEN-WORLD ROBLOX 3D · GURU INFORMATIKA: AZHARY MARDHANI, S.KOM
               </text>
             </svg>
 
-            <div className="w-full p-5 md:p-6 bg-slate-900/95 border border-slate-800 rounded-2xl shadow-2xl text-left space-y-4">
+            <div className="w-full p-4 sm:p-6 bg-slate-900/95 border border-slate-800 rounded-2xl shadow-2xl text-left space-y-4">
               {/* Banner Lanjutkan Sesi Terakhir jika ada progres tersimpan */}
               {studentName && (localScore > 0 || answeredQuestionIds.size > 0 || collectedItemsCount > 0) && (
-                <div className="p-3.5 bg-emerald-950/60 border border-emerald-500/70 rounded-xl flex flex-wrap items-center justify-between gap-3">
+                <div className="p-3 bg-emerald-950/60 border border-emerald-500/70 rounded-xl flex flex-wrap items-center justify-between gap-2.5">
                   <div className="flex items-center gap-2.5">
                     <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
                     <div className="text-xs text-slate-200">
@@ -1134,8 +1537,7 @@ export default function App() {
                       </div>
                       <div className="text-[11px] text-slate-300 font-mono">
                         Room: {activePin} · Skor: ${localScore} · MP: {missionPoints} · Soal:{' '}
-                        {answeredQuestionIds.size}/{activeQuestions.length} · Posisi: (
-                        {Math.round(latestPosRef.current.x)}, {Math.round(latestPosRef.current.y)})
+                        {answeredQuestionIds.size}/{activeQuestions.length}
                       </div>
                     </div>
                   </div>
@@ -1169,14 +1571,14 @@ export default function App() {
                     setEntryTab('STUDENT');
                     setAuthError(null);
                   }}
-                  className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg text-xs font-bold transition-colors whitespace-nowrap shrink-0 ${
+                  className={`flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-lg text-[11px] sm:text-xs font-bold transition-colors whitespace-nowrap shrink-0 ${
                     entryTab === 'STUDENT'
                       ? 'bg-emerald-600 text-white'
                       : 'text-slate-400 hover:text-slate-200'
                   }`}
                 >
-                  <KeyRound className="w-4 h-4" />
-                  Siswa (Pilih Karakter 3D & Kode Room)
+                  <KeyRound className="w-3.5 h-3.5" />
+                  <span>Siswa (Pilih Karakter 3D)</span>
                 </button>
                 <button
                   type="button"
@@ -1184,20 +1586,20 @@ export default function App() {
                     setEntryTab('TEACHER');
                     setAuthError(null);
                   }}
-                  className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg text-xs font-bold transition-colors whitespace-nowrap shrink-0 ${
+                  className={`flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-lg text-[11px] sm:text-xs font-bold transition-colors whitespace-nowrap shrink-0 ${
                     entryTab === 'TEACHER'
                       ? 'bg-amber-600 text-white'
                       : 'text-slate-400 hover:text-slate-200'
                   }`}
                 >
-                  <ShieldCheck className="w-4 h-4" />
-                  Guru / Host (Azhary Mardhani, S.Kom)
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  <span>Guru (Azhary Mardhani, S.Kom)</span>
                 </button>
               </div>
 
               {entryTab === 'STUDENT' ? (
-                <form onSubmit={handleStudentJoinRoom} className="space-y-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+                <form onSubmit={handleStudentJoinRoom} className="space-y-3.5">
+                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5">
                     <div className="sm:col-span-3">
                       <label className="block text-xs font-semibold text-amber-400 mb-1">
                         Kode Room Kelas
@@ -1208,7 +1610,7 @@ export default function App() {
                         value={roomCodeInput}
                         onChange={(e) => setRoomCodeInput(normalizePin(e.target.value))}
                         placeholder="MTN14"
-                        className="w-full px-3 py-2.5 text-base font-mono font-bold tracking-widest uppercase bg-slate-950 border border-amber-600/80 rounded-xl text-amber-300 focus:outline-none focus:border-amber-400 text-center"
+                        className="w-full px-3 py-2 text-base font-mono font-bold tracking-widest uppercase bg-slate-950 border border-amber-600/80 rounded-xl text-amber-300 focus:outline-none focus:border-amber-400 text-center"
                       />
                     </div>
 
@@ -1221,8 +1623,8 @@ export default function App() {
                         required
                         value={studentName}
                         onChange={(e) => setStudentName(e.target.value)}
-                        placeholder="Ketik nama lengkapmu (tersimpan otomatis)..."
-                        className="w-full px-3.5 py-2.5 text-sm bg-slate-950 border border-slate-800 rounded-xl text-slate-100 focus:outline-none focus:border-emerald-500"
+                        placeholder="Ketik nama lengkapmu..."
+                        className="w-full px-3.5 py-2 text-sm bg-slate-950 border border-slate-800 rounded-xl text-slate-100 focus:outline-none focus:border-emerald-500"
                       />
                     </div>
 
@@ -1233,7 +1635,7 @@ export default function App() {
                       <select
                         value={studentClass}
                         onChange={(e) => setStudentClass(e.target.value)}
-                        className="w-full px-3 py-2.5 text-sm bg-slate-950 border border-slate-800 rounded-xl text-slate-100 focus:outline-none focus:border-emerald-500"
+                        className="w-full px-3 py-2 text-sm bg-slate-950 border border-slate-800 rounded-xl text-slate-100 focus:outline-none focus:border-emerald-500"
                       >
                         <option value="Kelas 7A">Kelas 7A</option>
                         <option value="Kelas 7B">Kelas 7B</option>
@@ -1248,8 +1650,8 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* 3D GTA-Style Character Preset Selector */}
-                  <div className="space-y-2">
+                  {/* 3D Character Preset Selector */}
+                  <div className="space-y-1.5">
                     <div className="flex items-center justify-between">
                       <label className="text-xs font-semibold text-emerald-400 flex items-center gap-1.5">
                         <UserCheck className="w-3.5 h-3.5" />
@@ -1264,7 +1666,7 @@ export default function App() {
                             onClick={() => setRoomCodeInput(r.pin)}
                             className="font-mono font-bold text-amber-400 hover:underline ml-1"
                           >
-                            {r.pin} ({r.studentCount} Online)
+                            {r.pin} ({r.studentCount} Siswa)
                           </button>
                         ))}
                       </span>
@@ -1281,14 +1683,14 @@ export default function App() {
                               setSelectedPresetId(preset.id);
                               setAvatarColor(preset.jacketColor);
                             }}
-                            className={`p-2.5 rounded-xl border text-left transition-all flex items-center gap-2.5 ${
+                            className={`p-2 rounded-xl border text-left transition-all flex items-center gap-2 ${
                               isSelected
                                 ? 'bg-emerald-950/70 border-emerald-400 ring-1 ring-emerald-400'
                                 : 'bg-slate-950/90 border-slate-800 hover:border-slate-700'
                             }`}
                           >
                             <div
-                              className="w-8 h-8 rounded-lg shrink-0 flex items-center justify-center font-mono text-xs font-extrabold text-white border border-white/20"
+                              className="w-7 h-7 rounded-lg shrink-0 flex items-center justify-center font-mono text-[10px] font-extrabold text-white border border-white/20"
                               style={{ backgroundColor: preset.jacketColor }}
                             >
                               3D
@@ -1308,23 +1710,23 @@ export default function App() {
                   </div>
 
                   {/* Mission Rules Summary */}
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 p-3 bg-slate-950/90 border border-slate-800 rounded-xl text-[11px] text-slate-300">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 p-2.5 bg-slate-950/90 border border-slate-800 rounded-xl text-[11px] text-slate-300">
                     <div className="flex items-center gap-2">
-                      <Cpu className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <MessageSquare className="w-4 h-4 text-sky-400 shrink-0" />
                       <span>
-                        <strong>1. Cari Barang:</strong> Ambil komponen di sekitar sekolah (+50 MP)
+                        <strong>Chat & Open-World:</strong> Chat muncul di atas kepala karakter 3D!
                       </span>
                     </div>
                     <div className="flex items-center gap-2">
                       <Swords className="w-4 h-4 text-rose-400 shrink-0" />
                       <span>
-                        <strong>2. Duel Versus:</strong> Temui siswa lain & tekan [V] (+100 MP)
+                        <strong>Duel Persetujuan:</strong> Ajak teman duel 1v1 secara realtime (+100 MP)
                       </span>
                     </div>
                     <div className="flex items-center gap-2">
                       <GraduationCap className="w-4 h-4 text-amber-400 shrink-0" />
                       <span>
-                        <strong>3. Cari Guru:</strong> Temui Pak Azhary di 6 gedung sekolah [F]
+                        <strong>Pos Guru:</strong> Temui Pak Azhary di 6 gedung sekolah [F]
                       </span>
                     </div>
                   </div>
@@ -1337,10 +1739,10 @@ export default function App() {
 
                   <button
                     type="submit"
-                    className="w-full flex items-center justify-center gap-2 py-3.5 px-6 text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-500 rounded-xl shadow-lg transition-colors whitespace-nowrap shrink-0"
+                    className="w-full flex items-center justify-center gap-2 py-3 px-6 text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-500 rounded-xl shadow-lg transition-colors whitespace-nowrap shrink-0"
                   >
                     <Play className="w-4 h-4 fill-current" />
-                    Masuk ke Kampus 3D MTsN 14 Halim & Mulai Misi ({roomCodeInput || 'MTN14'})
+                    Masuk ke Open-World 3D MTsN 14 Halim ({roomCodeInput || 'MTN14'})
                   </button>
                 </form>
               ) : (
@@ -1396,9 +1798,9 @@ export default function App() {
 
                   <p className="text-xs text-slate-400 leading-relaxed">
                     Sebagai <strong>Host Guru (Azhary Mardhani, S.Kom)</strong>, Bapak dapat
-                    memantau seluruh siswa di lingkungan 3D <strong>MTs Negeri 14 Halim</strong>{' '}
-                    (Lapangan Upacara, Lab Komputer, Masjid Al-Ikhlas, Gedung Kelas, hingga Gerbang
-                    Jl. Elang), serta meninjau <strong>Analisis Butir Soal</strong> secara real-time.
+                    memantau seluruh siswa di lingkungan 3D <strong>MTs Negeri 14 Halim</strong>,
+                    berkomunikasi lewat Chat Kelas, serta meninjau <strong>Analisis Butir Soal</strong>{' '}
+                    secara real-time.
                   </p>
 
                   <button
@@ -1414,35 +1816,181 @@ export default function App() {
           </div>
 
           <div className="text-center text-xs font-mono text-slate-300 pointer-events-none">
-            Tersimpan Realtime Otomatis · WASD Jalan 3D · Space Lompat · [F] Pos Guru · [V] Duel
-            Versus Siswa
+            Open-World Roblox 3D · Chat Bubble Realtime · Duel Versus Persetujuan 2 Pihak
           </div>
         </div>
       )}
 
       {/* ====================================================================
-          3. HUD KAMPUS MTsN 14 HALIM + AUTO-SAVE STATUS & TELEPORT TEMAN
+          3. ADAPTIVE HUD KAMPUS MTsN 14 HALIM (HANDPHONE vs TABLET/DESKTOP)
          ==================================================================== */}
       {joinedRoom && (
         <>
-          {/* Toast Pemulihan Sesi Otomatis saat Browser Dibuka Kembali */}
+          {/* Toast Pemulihan Sesi Otomatis */}
           {resumedSessionToast && (
-            <div className="fixed top-20 left-1/2 -translate-x-1/2 z-30 pointer-events-none">
-              <div className="px-5 py-2.5 bg-slate-900/95 border-2 border-emerald-400 rounded-2xl shadow-2xl flex items-center gap-3">
-                <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
-                <div className="text-xs font-bold text-slate-100">
-                  SESI DILANJUTKAN OTOMATIS:{' '}
+            <div className="fixed top-14 sm:top-20 left-1/2 -translate-x-1/2 z-30 w-[92vw] max-w-lg pointer-events-none">
+              <div className="px-3.5 py-2 bg-slate-900/95 border-2 border-emerald-400 rounded-xl shadow-2xl flex items-center gap-2.5">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                <div className="text-[11px] sm:text-xs font-bold text-slate-100 leading-tight">
+                  SESI DILANJUTKAN:{' '}
                   <span className="text-emerald-300">
-                    Posisi di MTsN 14 Halim, Poin Misi ({displayedMp} MP), dan Progres Soal (
-                    {answeredQuestionIds.size}/{activeQuestions.length}) telah dipulihkan!
+                    Posisi MTsN 14 Halim, {displayedMp} MP & Soal ({answeredQuestionIds.size}/
+                    {activeQuestions.length}) dipulihkan!
                   </span>
                 </div>
               </div>
             </div>
           )}
 
-          {/* Top-Left Room, Live Classmates List & Instant Teleport-to-Friend Bar */}
-          <div className="fixed top-4 left-4 z-20 max-w-md pointer-events-none">
+          {/* REAL-TIME INCOMING VERSUS DUEL CONSENT BANNER (Appears when a classmate invites you!) */}
+          {incomingVersusInvite && openVersusModalMatchId !== incomingVersusInvite.id && (
+            <div className="fixed top-16 sm:top-20 left-1/2 -translate-x-1/2 z-40 w-[94vw] max-w-lg pointer-events-auto">
+              <div className="p-3 sm:p-4 bg-slate-900/98 border-2 border-rose-500 rounded-2xl shadow-2xl flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="p-2 rounded-xl bg-rose-500/20 text-rose-400 shrink-0">
+                    <Swords className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-[10px] font-mono font-bold text-rose-400 uppercase">
+                      TANTANGAN DUEL VERSUS 1V1 MASUK!
+                    </div>
+                    <div className="text-xs sm:text-sm font-extrabold text-slate-100 truncate">
+                      {incomingVersusInvite.challengerName} ({incomingVersusInvite.challengerClass})
+                      mengajak duel!
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={() => {
+                      soundEngine.playDash();
+                      handleRespondVersusConsent(incomingVersusInvite.id, true);
+                      setOpenVersusModalMatchId(incomingVersusInvite.id);
+                    }}
+                    className="px-3.5 py-2 text-xs font-extrabold text-slate-950 bg-emerald-400 hover:bg-emerald-300 rounded-xl shadow-lg transition-colors"
+                  >
+                    ✓ Terima Duel
+                  </button>
+                  <button
+                    onClick={() => {
+                      handleRespondVersusConsent(incomingVersusInvite.id, false);
+                      handleCloseVersusMatch(incomingVersusInvite.id);
+                    }}
+                    className="px-3 py-2 text-xs font-bold text-slate-300 bg-slate-800 hover:bg-rose-900 border border-slate-700 rounded-xl transition-colors"
+                  >
+                    ✕ Tolak
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 3A. COMPACT MOBILE TOP HUD BAR (Handphone <768px) */}
+          <div className="fixed top-2 left-2 right-2 z-20 md:hidden pointer-events-none flex flex-col gap-1.5">
+            <div className="bg-slate-900/95 border border-slate-700/90 rounded-xl px-2 py-1.5 shadow-xl pointer-events-auto flex items-center justify-between gap-1">
+              {/* Left: Room PIN, Online Students Drawer Toggle, & Chat Button */}
+              <div className="flex items-center gap-1 min-w-0">
+                <button
+                  onClick={handleCopyRoomPin}
+                  className="px-2 py-1 rounded-lg bg-slate-950 border border-amber-500/60 text-[10px] font-mono font-extrabold text-amber-400 shrink-0"
+                >
+                  {activePin}
+                </button>
+                <button
+                  onClick={() => setIsMobilePeersOpen((prev) => !prev)}
+                  className="flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-950/90 border border-emerald-600/70 text-[10px] font-bold text-emerald-300 shrink-0"
+                >
+                  <Users className="w-3 h-3" />
+                  <span>{onlineClassmates.length + 1}</span>
+                  <ChevronDown className="w-3 h-3" />
+                </button>
+                <button
+                  onClick={() => setIsChatOpen((prev) => !prev)}
+                  className="relative flex items-center gap-1 px-2 py-1 rounded-lg bg-sky-950/90 border border-sky-500/70 text-[10px] font-bold text-sky-300 shrink-0"
+                >
+                  <MessageSquare className="w-3 h-3" />
+                  <span>Chat</span>
+                  {unreadChatCount > 0 && (
+                    <span className="px-1 rounded-full bg-rose-500 text-white text-[9px] font-mono font-extrabold">
+                      {unreadChatCount}
+                    </span>
+                  )}
+                </button>
+              </div>
+
+              {/* Right: Compact Score, MP & Question Counter */}
+              <div className="flex items-center gap-1 font-mono tabular-nums text-[10px] shrink-0">
+                <span className="font-extrabold text-emerald-400">${displayedScore}</span>
+                <span className="px-1.5 py-0.5 rounded bg-emerald-950 border border-emerald-700 text-emerald-300 font-bold">
+                  {displayedMp}MP
+                </span>
+                <span className="px-1.5 py-0.5 rounded bg-sky-950 border border-sky-700 text-sky-300 font-bold">
+                  {answeredQuestionIds.size}/{activeQuestions.length}
+                </span>
+              </div>
+            </div>
+
+            {/* Expandable Mobile Classmates Teleport & Versus Invite Drawer */}
+            {isMobilePeersOpen && (
+              <div className="bg-slate-900/95 border border-emerald-500/80 rounded-xl p-2.5 shadow-2xl pointer-events-auto space-y-1.5 mr-24">
+                <div className="flex items-center justify-between text-[10px] font-mono text-emerald-400 font-bold">
+                  <span>TEMAN SEKELAS ONLINE ({onlineClassmates.length}):</span>
+                  <button
+                    onClick={() => {
+                      handleTeleportToPosition(1200, 780);
+                      setIsMobilePeersOpen(false);
+                    }}
+                    className="px-2 py-0.5 rounded bg-sky-900 text-sky-200 text-[10px]"
+                  >
+                    Ke Lapangan Upacara
+                  </button>
+                </div>
+                {onlineClassmates.length > 0 ? (
+                  <div className="flex flex-col gap-1.5 max-h-32 overflow-y-auto">
+                    {onlineClassmates.map((peer) => (
+                      <div
+                        key={peer.id}
+                        className="flex items-center justify-between gap-1.5 px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-lg"
+                      >
+                        <div className="text-[11px] font-bold text-slate-100 truncate">
+                          {peer.name}{' '}
+                          <span className="text-[10px] text-slate-400">({peer.studentClass})</span>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            onClick={() => {
+                              handleTeleportToPosition(peer.x + 28, peer.y + 18);
+                              setIsMobilePeersOpen(false);
+                            }}
+                            className="px-2 py-1 text-[10px] font-bold text-emerald-300 bg-emerald-950 border border-emerald-600/70 rounded"
+                          >
+                            Hampiri
+                          </button>
+                          <button
+                            onClick={() => {
+                              handleSendVersusInvite(peer);
+                              setIsMobilePeersOpen(false);
+                            }}
+                            className="px-2 py-1 text-[10px] font-bold text-white bg-rose-600 rounded"
+                          >
+                            ⚔️ Duel
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-[11px] text-slate-300">
+                    Ajak teman sekelas masuk dengan Kode Room <strong>{activePin}</strong> untuk
+                    bertemu & Duel Versus 1v1!
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* 3B. DESKTOP / TABLET TOP-LEFT & TOP-RIGHT HUD (Hidden on Handphone <768px) */}
+          <div className="hidden md:block fixed top-4 left-4 z-20 max-w-md pointer-events-none">
             <div className="bg-slate-900/95 border border-slate-700/90 rounded-2xl px-4 py-3 shadow-2xl pointer-events-auto space-y-2">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
@@ -1463,10 +2011,10 @@ export default function App() {
                   </button>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5">
                   <span className="flex items-center gap-1 text-xs font-semibold text-emerald-400 tabular-nums">
                     <Users className="w-3.5 h-3.5" />
-                    {onlineClassmates.length + 1} Siswa · {classPlayers.length} di Map
+                    {onlineClassmates.length + 1} Siswa Online
                   </span>
                   <button
                     onClick={() => handleTeleportToPosition(1200, 780)}
@@ -1475,43 +2023,64 @@ export default function App() {
                   >
                     Lap. Upacara
                   </button>
+                  <button
+                    onClick={() => setIsChatOpen((prev) => !prev)}
+                    className="relative flex items-center gap-1 px-2.5 py-0.5 text-[10px] font-bold text-sky-300 bg-sky-950 hover:bg-sky-900 border border-sky-500/70 rounded transition-colors"
+                  >
+                    <MessageSquare className="w-3 h-3" />
+                    <span>Chat Kelas</span>
+                    {unreadChatCount > 0 && (
+                      <span className="px-1 rounded-full bg-rose-500 text-white text-[9px] font-mono">
+                        {unreadChatCount}
+                      </span>
+                    )}
+                  </button>
                 </div>
               </div>
 
-              {/* Live Online Classmates in the Same Room Code (Click to Teleport Directly Next to Them!) */}
               {onlineClassmates.length > 0 ? (
                 <div className="pt-1 border-t border-slate-800 space-y-1">
                   <div className="text-[10px] font-mono font-bold text-emerald-400 uppercase">
-                    TEMAN SEKELAS DI KAMPUS MTsN 14 (KLIK UNTUK HAMPIRI & VERSUS):
+                    TEMAN SEKELAS ONLINE DI ARENA (HAMPIRI / AJAK DUEL REALTIME):
                   </div>
                   <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
                     {onlineClassmates.map((peer) => (
-                      <button
+                      <div
                         key={peer.id}
-                        onClick={() => handleTeleportToPosition(peer.x + 28, peer.y + 18)}
-                        className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold text-slate-100 bg-emerald-950/80 hover:bg-emerald-800/90 border border-emerald-500/70 rounded-lg transition-colors"
-                        title={`Teleport langsung ke sebelah ${peer.name} (${peer.x}, ${peer.y})`}
+                        className="flex items-center gap-1 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1"
                       >
-                        <Navigation className="w-3 h-3 text-emerald-400 shrink-0" />
-                        <span className="truncate max-w-[130px]">{peer.name}</span>
-                        <span className="text-[10px] font-mono text-emerald-300">Hampiri</span>
-                      </button>
+                        <span className="text-[11px] font-bold text-slate-100 truncate max-w-[110px]">
+                          {peer.name}
+                        </span>
+                        <button
+                          onClick={() => handleTeleportToPosition(peer.x + 28, peer.y + 18)}
+                          className="px-1.5 py-0.5 text-[10px] font-mono font-bold text-emerald-300 bg-emerald-950 hover:bg-emerald-800 border border-emerald-600/60 rounded"
+                          title={`Teleport ke sebelah ${peer.name}`}
+                        >
+                          <Navigation className="w-2.5 h-2.5 inline mr-0.5" />
+                          Hampiri
+                        </button>
+                        <button
+                          onClick={() => handleSendVersusInvite(peer)}
+                          className="px-1.5 py-0.5 text-[10px] font-mono font-bold text-white bg-rose-600 hover:bg-rose-500 rounded"
+                          title={`Kirim undangan Duel 1v1 ke ${peer.name}`}
+                        >
+                          ⚔️ Duel
+                        </button>
+                      </div>
                     ))}
                   </div>
                 </div>
               ) : (
                 <div className="text-[11px] text-slate-300 leading-snug pt-0.5 border-t border-slate-800">
-                  Lokasi: <strong>Kampus MTsN 14 Halim (Jl. Elang, Komp. Rajawali)</strong>. Teman
-                  yang masuk dengan Kode Room{' '}
-                  <strong className="font-mono text-amber-400">{activePin}</strong> akan langsung
-                  bertemu di Lapangan Upacara!
+                  Arena Open-World <strong>MTsN 14 Halim</strong>. Semua siswa otomatis bertemu,
+                  mengobrol lewat Chat Bubble 3D, dan Duel Versus secara persetujuan 2 pihak!
                 </div>
               )}
             </div>
           </div>
 
-          {/* Top-Right GTA San Andreas Style Status HUD + Real-Time Auto-Save Badge */}
-          <div className="fixed top-4 right-4 z-20 pointer-events-none">
+          <div className="hidden md:block fixed top-4 right-4 z-20 pointer-events-none">
             <div className="bg-slate-900/95 border-2 border-slate-700 rounded-2xl px-5 py-3 shadow-2xl text-right space-y-1 font-mono tabular-nums pointer-events-auto">
               <div className="flex items-center justify-end gap-2">
                 <span className="px-2 py-0.5 rounded bg-emerald-950 border border-emerald-700 text-[10px] font-bold text-emerald-300">
@@ -1539,35 +2108,128 @@ export default function App() {
             </div>
           </div>
 
+          {/* 3C. ROBLOX-STYLE OPEN-WORLD REAL-TIME CHAT WINDOW (Collapsible, works on Handphone & Desktop) */}
+          {isChatOpen && (
+            <div className="fixed top-14 md:top-40 left-2 md:left-4 z-30 w-[92vw] max-w-sm bg-slate-900/95 border-2 border-sky-500/80 rounded-2xl shadow-2xl pointer-events-auto flex flex-col overflow-hidden">
+              <div className="flex items-center justify-between px-3.5 py-2 bg-slate-950 border-b border-slate-800">
+                <div className="flex items-center gap-2">
+                  <MessageSquare className="w-4 h-4 text-sky-400" />
+                  <span className="text-xs font-extrabold text-slate-100">
+                    CHAT OPEN-WORLD MTsN 14 HALIM
+                  </span>
+                </div>
+                <button
+                  onClick={() => setIsChatOpen(false)}
+                  className="p-1 text-slate-400 hover:text-slate-100 bg-slate-800 rounded-lg"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              {/* Message Feed */}
+              <div className="p-3 space-y-2 max-h-44 sm:max-h-56 overflow-y-auto text-xs bg-slate-950/60">
+                {chatMessages.map((msg) => {
+                  const isMe = msg.senderId === localPlayerIdRef.current;
+                  return (
+                    <div
+                      key={msg.id}
+                      className={`p-2 rounded-xl border ${
+                        msg.senderRole === 'TEACHER'
+                          ? 'bg-amber-950/50 border-amber-500/60'
+                          : isMe
+                          ? 'bg-sky-950/60 border-sky-600/60'
+                          : 'bg-slate-900/90 border-slate-800'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2 mb-0.5">
+                        <span
+                          className="font-extrabold text-[11px] truncate"
+                          style={{
+                            color:
+                              msg.senderRole === 'TEACHER'
+                                ? '#fbbf24'
+                                : isMe
+                                ? '#38bdf8'
+                                : '#34d399',
+                          }}
+                        >
+                          {msg.senderName} ({msg.senderClass})
+                        </span>
+                      </div>
+                      <p className="text-slate-100 text-xs break-words leading-snug">{msg.text}</p>
+                    </div>
+                  );
+                })}
+                <div ref={chatEndRef} />
+              </div>
+
+              {/* 1-Tap Quick Chat Pills for Fast Mobile Communication */}
+              <div className="px-2.5 py-1.5 bg-slate-950 border-t border-slate-800 flex items-center gap-1.5 overflow-x-auto">
+                {QUICK_CHAT_PHRASES.map((phrase) => (
+                  <button
+                    key={phrase}
+                    type="button"
+                    onClick={() => handleSendChatMessage(phrase)}
+                    className="px-2 py-1 text-[10px] font-semibold text-sky-200 bg-slate-900 hover:bg-sky-900 border border-slate-700 rounded-lg whitespace-nowrap shrink-0"
+                  >
+                    {phrase}
+                  </button>
+                ))}
+              </div>
+
+              {/* Input Box */}
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  handleSendChatMessage(chatInput);
+                }}
+                className="p-2 bg-slate-900 border-t border-slate-800 flex items-center gap-1.5"
+              >
+                <input
+                  type="text"
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  placeholder="Ketik pesan (muncul di atas karakter 3D)..."
+                  maxLength={140}
+                  className="flex-1 px-3 py-1.5 text-xs bg-slate-950 border border-slate-700 rounded-xl text-slate-100 focus:outline-none focus:border-sky-400"
+                />
+                <button
+                  type="submit"
+                  className="px-3 py-1.5 bg-sky-500 hover:bg-sky-400 text-slate-950 font-extrabold text-xs rounded-xl flex items-center gap-1 shrink-0"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>Kirim</span>
+                </button>
+              </form>
+            </div>
+          )}
+
           {/* Item Pickup Notification Toast */}
           {pickupBanner && (
-            <div className="fixed top-36 left-1/2 -translate-x-1/2 z-30 pointer-events-none">
-              <div className="px-5 py-2.5 bg-slate-900/95 border-2 border-emerald-400 rounded-2xl shadow-2xl flex items-center gap-3">
-                <Cpu className="w-5 h-5 text-emerald-400 shrink-0" />
-                <div className="text-xs font-bold text-slate-100">
-                  BARANG DITEMUKAN:{' '}
-                  <span className="text-emerald-300">{pickupBanner.itemName}</span>{' '}
-                  <span className="font-mono text-amber-300 ml-1">
-                    (+{pickupBanner.mpGain} Poin Misi MP)
-                  </span>
+            <div className="fixed top-28 sm:top-36 left-1/2 -translate-x-1/2 z-30 w-[90vw] max-w-md pointer-events-none">
+              <div className="px-3.5 py-2 bg-slate-900/95 border-2 border-emerald-400 rounded-xl shadow-2xl flex items-center justify-center gap-2">
+                <Cpu className="w-4 h-4 text-emerald-400 shrink-0" />
+                <div className="text-[11px] sm:text-xs font-bold text-slate-100 truncate">
+                  DITEMUKAN: <span className="text-emerald-300">{pickupBanner.itemName}</span>{' '}
+                  <span className="font-mono text-amber-300">(+{pickupBanner.mpGain} MP)</span>
                 </div>
               </div>
             </div>
           )}
 
-          {/* Proximity Action Prompts: Meet Teacher OR Meet Another Student for Versus */}
-          <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-2.5 w-full max-w-xl px-4 pointer-events-none">
+          {/* Proximity Action Prompts */}
+          <div className="fixed bottom-44 sm:bottom-24 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-2 w-[92vw] max-w-lg px-2 pointer-events-none">
             {nearbyTeacherPost && (
-              <div className="w-full p-4 bg-slate-900/95 border-2 border-amber-400 rounded-2xl shadow-2xl flex items-center justify-between gap-4 pointer-events-auto">
-                <div className="flex items-center gap-3">
-                  <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-300">
-                    <GraduationCap className="w-6 h-6" />
+              <div className="w-full p-2.5 sm:p-4 bg-slate-900/95 border-2 border-amber-400 rounded-xl sm:rounded-2xl shadow-2xl flex items-center justify-between gap-2.5 pointer-events-auto">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="p-2 rounded-lg bg-amber-500/20 text-amber-300 shrink-0">
+                    <GraduationCap className="w-5 h-5" />
                   </div>
-                  <div>
-                    <div className="text-[11px] font-mono font-bold text-amber-400 uppercase">
-                      GEDUNG MTsN 14 HALIM · {nearbyTeacherPost.buildingName}
+                  <div className="min-w-0">
+                    <div className="text-[10px] font-mono font-bold text-amber-400 uppercase truncate">
+                      {nearbyTeacherPost.buildingName}
                     </div>
-                    <div className="text-sm font-extrabold text-slate-100">
+                    <div className="text-xs sm:text-sm font-extrabold text-slate-100 truncate">
                       {nearbyTeacherPost.title}
                     </div>
                   </div>
@@ -1578,132 +2240,148 @@ export default function App() {
                     soundEngine.playDash();
                     setActiveTeacherModalIndex(nearbyTeacherPost.index);
                   }}
-                  className="px-4 py-2.5 text-xs font-extrabold text-slate-950 bg-amber-400 hover:bg-amber-300 rounded-xl shadow-lg transition-colors whitespace-nowrap shrink-0"
+                  className="px-3 sm:px-4 py-2 text-[11px] sm:text-xs font-extrabold text-slate-950 bg-amber-400 hover:bg-amber-300 rounded-lg sm:rounded-xl shadow-lg transition-colors whitespace-nowrap shrink-0"
                 >
-                  [F] Jawab Soal Guru
+                  Jawab Soal [F]
                 </button>
               </div>
             )}
 
             {nearbyVersusTarget && (
-              <div className="w-full p-4 bg-slate-900/95 border-2 border-rose-500 rounded-2xl shadow-2xl flex items-center justify-between gap-4 pointer-events-auto">
-                <div className="flex items-center gap-3">
-                  <div className="p-2.5 rounded-xl bg-rose-500/20 text-rose-300">
-                    <Swords className="w-6 h-6" />
+              <div className="w-full p-2.5 sm:p-4 bg-slate-900/95 border-2 border-rose-500 rounded-xl sm:rounded-2xl shadow-2xl flex items-center justify-between gap-2.5 pointer-events-auto">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="p-2 rounded-lg bg-rose-500/20 text-rose-300 shrink-0">
+                    <Swords className="w-5 h-5" />
                   </div>
-                  <div>
-                    <div className="text-[11px] font-mono font-bold text-rose-400 uppercase">
-                      BERTEMU SISWA DI HALAMAN SEKOLAH · DUEL VERSUS 1V1
+                  <div className="min-w-0">
+                    <div className="text-[10px] font-mono font-bold text-rose-400 uppercase truncate">
+                      {nearbyVersusTarget.isRoamingPeer
+                        ? 'BOT LATIHAN · DUEL 1V1'
+                        : 'TEMAN SEKELAS · UNDANG DUEL PERSETUJUAN 1V1'}
                     </div>
-                    <div className="text-sm font-extrabold text-slate-100">
+                    <div className="text-xs sm:text-sm font-extrabold text-slate-100 truncate">
                       {nearbyVersusTarget.name} ({nearbyVersusTarget.studentClass})
                     </div>
                   </div>
                 </div>
 
                 <button
-                  onClick={() => {
-                    soundEngine.playDash();
-                    setActiveVersusOpponent(nearbyVersusTarget);
-                  }}
-                  className="px-4 py-2.5 text-xs font-extrabold text-white bg-rose-600 hover:bg-rose-500 rounded-xl shadow-lg transition-colors whitespace-nowrap shrink-0"
+                  onClick={() => handleSendVersusInvite(nearbyVersusTarget)}
+                  className="px-3 sm:px-4 py-2 text-[11px] sm:text-xs font-extrabold text-white bg-rose-600 hover:bg-rose-500 rounded-lg sm:rounded-xl shadow-lg transition-colors whitespace-nowrap shrink-0"
                 >
-                  [V] Tantang Versus (+100 MP)
+                  Ajak Duel [V]
                 </button>
               </div>
             )}
           </div>
 
           {/* Unified Collapsible Bottom Control Dock */}
-          <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-20 w-full max-w-[min(860px,92vw)] pointer-events-none flex flex-col items-center">
+          <div className="fixed bottom-1.5 sm:bottom-4 left-1/2 -translate-x-1/2 z-20 w-[96vw] sm:w-full max-w-[min(860px,94vw)] pointer-events-none flex flex-col items-center">
             <button
               onClick={() => setIsDockCollapsed((prev) => !prev)}
-              className="pointer-events-auto flex items-center gap-1.5 px-3.5 py-1 text-[11px] font-semibold text-slate-300 bg-slate-900/95 hover:bg-slate-800 border border-b-0 border-slate-700 rounded-t-xl transition-colors whitespace-nowrap shrink-0"
+              className="pointer-events-auto flex items-center gap-1 px-3 py-0.5 sm:py-1 text-[10px] sm:text-[11px] font-semibold text-slate-300 bg-slate-900/95 hover:bg-slate-800 border border-b-0 border-slate-700 rounded-t-lg sm:rounded-t-xl transition-colors whitespace-nowrap shrink-0"
             >
               {isDockCollapsed ? (
                 <>
-                  <ChevronUp className="w-3.5 h-3.5 text-sky-400" />
-                  Tampilkan Panel Misi (H)
+                  <ChevronUp className="w-3 h-3 text-sky-400" />
+                  <span>Menu Misi (H)</span>
                 </>
               ) : (
                 <>
-                  <ChevronDown className="w-3.5 h-3.5 text-sky-400" />
-                  Sembunyikan Panel Misi (H)
+                  <ChevronDown className="w-3 h-3 text-sky-400" />
+                  <span>Tutup Menu (H)</span>
                 </>
               )}
             </button>
 
             {!isDockCollapsed && (
-              <div className="pointer-events-auto w-full bg-slate-900/95 border border-slate-700/90 rounded-2xl px-4 py-2.5 shadow-2xl flex flex-wrap items-center justify-between gap-2.5">
-                {/* Left Quick Mission Actions */}
-                <div className="flex flex-wrap items-center gap-2">
+              <div className="pointer-events-auto w-full bg-slate-900/95 border border-slate-700/90 rounded-xl sm:rounded-2xl px-2.5 sm:px-4 py-1.5 sm:py-2.5 shadow-2xl flex items-center justify-between gap-1.5 sm:gap-2.5 overflow-x-auto">
+                {/* Left Quick Mission & Chat Actions */}
+                <div className="flex items-center gap-1.5 shrink-0">
                   <button
                     onClick={() => setActiveTeacherModalIndex(0)}
-                    className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-slate-950 bg-amber-400 hover:bg-amber-300 rounded-xl transition-colors whitespace-nowrap shrink-0"
+                    className="flex items-center gap-1 px-2.5 sm:px-3.5 py-1.5 sm:py-2 text-[11px] sm:text-xs font-bold text-slate-950 bg-amber-400 hover:bg-amber-300 rounded-lg sm:rounded-xl transition-colors whitespace-nowrap shrink-0"
                   >
-                    <GraduationCap className="w-4 h-4" />
-                    Daftar Soal Guru ({answeredQuestionIds.size}/{activeQuestions.length})
+                    <GraduationCap className="w-3.5 h-3.5" />
+                    <span>
+                      Soal ({answeredQuestionIds.size}/{activeQuestions.length})
+                    </span>
+                  </button>
+
+                  <button
+                    onClick={() => setIsChatOpen((prev) => !prev)}
+                    className="relative flex items-center gap-1 px-2.5 sm:px-3.5 py-1.5 sm:py-2 text-[11px] sm:text-xs font-bold text-white bg-sky-600 hover:bg-sky-500 rounded-lg sm:rounded-xl transition-colors whitespace-nowrap shrink-0"
+                  >
+                    <MessageSquare className="w-3.5 h-3.5" />
+                    <span>Chat</span>
+                    {unreadChatCount > 0 && (
+                      <span className="px-1.5 rounded-full bg-rose-500 text-white text-[10px] font-mono">
+                        {unreadChatCount}
+                      </span>
+                    )}
                   </button>
 
                   {nearbyVersusTarget && (
                     <button
-                      onClick={() => setActiveVersusOpponent(nearbyVersusTarget)}
-                      className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-500 rounded-xl transition-colors whitespace-nowrap shrink-0"
+                      onClick={() => handleSendVersusInvite(nearbyVersusTarget)}
+                      className="flex items-center gap-1 px-2.5 sm:px-3.5 py-1.5 sm:py-2 text-[11px] sm:text-xs font-bold text-white bg-rose-600 hover:bg-rose-500 rounded-lg sm:rounded-xl transition-colors whitespace-nowrap shrink-0"
                     >
-                      <Swords className="w-4 h-4" />
-                      Duel vs {nearbyVersusTarget.name}
+                      <Swords className="w-3.5 h-3.5" />
+                      <span className="max-w-[90px] sm:max-w-none truncate">
+                        Ajak Duel {nearbyVersusTarget.name}
+                      </span>
                     </button>
                   )}
                 </div>
 
                 {/* Right Utility Controls */}
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5 shrink-0">
                   <button
                     onClick={() =>
                       setCameraMode((prev) =>
                         prev === 'FOLLOW_PLAYER' ? 'FULL_MAP' : 'FOLLOW_PLAYER'
                       )
                     }
-                    className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-100 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl transition-colors whitespace-nowrap shrink-0"
+                    className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 sm:py-2 text-[11px] sm:text-xs font-semibold text-slate-100 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg sm:rounded-xl transition-colors whitespace-nowrap shrink-0"
                   >
                     {cameraMode === 'FULL_MAP' ? (
                       <>
                         <Minimize2 className="w-3.5 h-3.5 text-sky-400" />
-                        Kamera Karakter 3D
+                        <span className="hidden sm:inline">Kamera</span> 3D
                       </>
                     ) : (
                       <>
                         <Maximize2 className="w-3.5 h-3.5 text-amber-400" />
-                        Kamera Kampus Halim
+                        <span className="hidden sm:inline">Kamera</span> Peta
                       </>
                     )}
                   </button>
 
                   <button
                     onClick={() => setIsMaterialModalOpen(true)}
-                    className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-100 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl transition-colors whitespace-nowrap shrink-0"
+                    className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 sm:py-2 text-[11px] sm:text-xs font-semibold text-slate-100 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg sm:rounded-xl transition-colors whitespace-nowrap shrink-0"
                   >
                     <BookOpen className="w-3.5 h-3.5 text-sky-400" />
-                    Tambah Materi & Soal
+                    <span>Materi</span>
                   </button>
 
                   <button
                     onClick={handleFinishToAnalysis}
-                    className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-100 bg-emerald-700 hover:bg-emerald-600 border border-emerald-500 rounded-xl transition-colors whitespace-nowrap shrink-0"
+                    className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 sm:py-2 text-[11px] sm:text-xs font-semibold text-slate-100 bg-emerald-700 hover:bg-emerald-600 border border-emerald-500 rounded-lg sm:rounded-xl transition-colors whitespace-nowrap shrink-0"
                   >
                     <BarChart3 className="w-3.5 h-3.5 text-emerald-200" />
-                    Analisis Butir Soal
+                    <span>Analisis</span>
                   </button>
 
                   <button
                     onClick={() => setIsMuted(soundEngine.toggleMute())}
                     title="Suara / Bisu"
-                    className="p-2 text-slate-200 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl transition-colors"
+                    className="p-1.5 sm:p-2 text-slate-200 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg sm:rounded-xl transition-colors shrink-0"
                   >
                     {isMuted ? (
-                      <VolumeX className="w-4 h-4 text-rose-400" />
+                      <VolumeX className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-rose-400" />
                     ) : (
-                      <Volume2 className="w-4 h-4 text-sky-400" />
+                      <Volume2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-sky-400" />
                     )}
                   </button>
 
@@ -1713,9 +2391,9 @@ export default function App() {
                       setJoinedRoom(false);
                     }}
                     title="Ke Portal (Progres Tersimpan)"
-                    className="p-2 text-slate-400 hover:text-rose-400 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl transition-colors"
+                    className="p-1.5 sm:p-2 text-slate-400 hover:text-rose-400 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg sm:rounded-xl transition-colors shrink-0"
                   >
-                    <LogOut className="w-4 h-4" />
+                    <LogOut className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                   </button>
                 </div>
               </div>
@@ -1725,14 +2403,15 @@ export default function App() {
       )}
 
       {/* ====================================================================
-          4. DUEL VERSUS ANTAR SISWA MODAL (1V1)
+          4. DUEL VERSUS ANTAR SISWA MODAL (REAL-TIME MUTUAL CONSENT 1V1)
          ==================================================================== */}
       <VersusDuelModal
-        isOpen={Boolean(activeVersusOpponent)}
-        opponent={activeVersusOpponent}
+        activeMatch={activeMyVersusMatch}
+        localPlayerId={localPlayerIdRef.current}
         localPlayerName={studentName || 'Siswa MTsN 14'}
-        onClose={() => setActiveVersusOpponent(null)}
-        onCompleteVersus={handleCompleteVersus}
+        onRespondConsent={handleRespondVersusConsent}
+        onSubmitRoundAnswer={handleSubmitVersusRoundAnswer}
+        onCloseMatch={handleCloseVersusMatch}
       />
 
       {/* ====================================================================

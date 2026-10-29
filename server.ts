@@ -24,6 +24,8 @@ export interface ClassMapPlayer {
   y: number;
   vx: number;
   vy: number;
+  facingAngle: number;
+  jumpY: number;
   score: number;
   missionPoints: number;
   collectedItemsCount: number;
@@ -34,8 +36,49 @@ export interface ClassMapPlayer {
   currentSector: OptionKey | null;
   lockedOption: OptionKey | null;
   lockTimeMs: number | null;
+  lastChatText?: string;
+  lastChatTime?: number;
   lastUpdated: number;
   isRoamingPeer?: boolean;
+}
+
+export interface RoomChatMessage {
+  id: string;
+  senderId: string;
+  senderName: string;
+  senderClass: string;
+  senderRole: 'TEACHER' | 'STUDENT';
+  senderColor: string;
+  text: string;
+  timestamp: number;
+}
+
+export interface VersusQuestionItem {
+  prompt: string;
+  options: string[];
+  correctIndex: number;
+  topic: string;
+}
+
+export interface VersusMatchState {
+  id: string;
+  pin: string;
+  status: 'PENDING_CONSENT' | 'IN_PROGRESS' | 'FINISHED' | 'DECLINED' | 'CANCELLED';
+  challengerId: string;
+  challengerName: string;
+  challengerClass: string;
+  opponentId: string;
+  opponentName: string;
+  opponentClass: string;
+  isBotOpponent: boolean;
+  roundIdx: number;
+  questions: VersusQuestionItem[];
+  challengerScore: number;
+  opponentScore: number;
+  challengerAnsweredRound: number;
+  opponentAnsweredRound: number;
+  createdAt: number;
+  updatedAt: number;
 }
 
 export interface ClassroomRoom {
@@ -51,6 +94,8 @@ export interface ClassroomRoom {
   players: Map<string, ClassMapPlayer>;
   answers: PlayerAnswerEvent[];
   activeQuestionIds: string[];
+  chatMessages: RoomChatMessage[];
+  versusMatches: Map<string, VersusMatchState>;
 }
 
 export const MAP_WIDTH = 2400;
@@ -59,6 +104,67 @@ export const SPAWN_CENTER_X = 1200;
 export const SPAWN_CENTER_Y = 780;
 
 const STATE_FILE_PATH = path.join(process.cwd(), '.mtsn14_halim_state.json');
+
+const VERSUS_CHALLENGE_POOL: VersusQuestionItem[] = [
+  {
+    prompt: 'Konversi cepat bilangan biner 1010(2) ke desimal adalah...',
+    options: ['8', '10', '12', '14'],
+    correctIndex: 1,
+    topic: 'Sistem Bilangan Biner',
+  },
+  {
+    prompt: 'Gerbang logika AND menghasilkan output 1 jika kedua input bernilai...',
+    options: ['0 dan 0', '1 dan 0', '0 dan 1', '1 dan 1'],
+    correctIndex: 3,
+    topic: 'Gerbang Logika CPU',
+  },
+  {
+    prompt: 'Protokol web yang mengenkripsi paket data dengan SSL/TLS adalah...',
+    options: ['HTTP', 'FTP', 'HTTPS', 'TELNET'],
+    correctIndex: 2,
+    topic: 'Keamanan Jaringan',
+  },
+  {
+    prompt: 'Fungsi spreadsheet untuk mencari nilai rata-rata rentang sel adalah...',
+    options: ['=SUM()', '=AVERAGE()', '=COUNT()', '=MAX()'],
+    correctIndex: 1,
+    topic: 'Analisis Data',
+  },
+  {
+    prompt: 'Memecah masalah kompleks menjadi bagian lebih kecil disebut...',
+    options: ['Dekomposisi', 'Abstraksi', 'Enkripsi', 'Kompilasi'],
+    correctIndex: 0,
+    topic: 'Berpikir Komputasional',
+  },
+  {
+    prompt: 'Hasil operasi sisa bagi (Modulo) dari 14 % 4 adalah...',
+    options: ['1', '2', '3', '4'],
+    correctIndex: 1,
+    topic: 'Algoritma & Pemrograman',
+  },
+  {
+    prompt: 'Memori komputer yang datanya hilang saat listrik padam (Volatile) adalah...',
+    options: ['ROM', 'Harddisk', 'RAM', 'Flashdisk'],
+    correctIndex: 2,
+    topic: 'Sistem Komputer',
+  },
+  {
+    prompt: 'Perangkat jaringan yang menghubungkan dua jaringan berbeda segmen IP adalah...',
+    options: ['Repeater', 'Hub', 'Router', 'Kabel UTP'],
+    correctIndex: 2,
+    topic: 'Jaringan Komputer',
+  },
+  {
+    prompt: 'Bilangan desimal 7 jika diubah ke biner 4-bit menjadi...',
+    options: ['0101', '0111', '1001', '1110'],
+    correctIndex: 1,
+    topic: 'Sistem Bilangan Biner',
+  },
+];
+
+function pickVersusQuestions(): VersusQuestionItem[] {
+  return [...VERSUS_CHALLENGE_POOL].sort(() => Math.random() - 0.5).slice(0, 3);
+}
 
 let materialsStore: InformaticsMaterial[] = [...INITIAL_MATERIALS];
 let questionsStore: InformaticsQuestion[] = [...INITIAL_QUESTIONS];
@@ -72,7 +178,7 @@ export function normalizeRoomPin(raw: unknown): string {
   return cleaned || 'MTN14';
 }
 
-// Seed roaming MTsN 14 Halim classmates on the campus map so any student walking around can meet & Versus them
+// Seed 2 clearly labeled training bots so solo practice is always available, while real students are front and center
 const ROAMING_PEERS_TEMPLATE: Array<{
   id: string;
   name: string;
@@ -86,47 +192,25 @@ const ROAMING_PEERS_TEMPLATE: Array<{
 }> = [
   {
     id: 'peer-aldo',
-    name: 'Aldo Pratama (NPC)',
-    studentClass: 'Kelas 8A',
+    name: '[BOT] Aldo Latihan',
+    studentClass: 'Bot Kelas 8A',
     characterPreset: 'bima_rider',
     color: '#f59e0b',
-    x: 920,
-    y: 620,
-    vx: 55,
-    vy: 30,
+    x: 880,
+    y: 590,
+    vx: 48,
+    vy: 26,
   },
   {
     id: 'peer-nabila',
-    name: 'Nabila Putri (NPC)',
-    studentClass: 'Kelas 8B',
+    name: '[BOT] Nabila Latihan',
+    studentClass: 'Bot Kelas 8B',
     characterPreset: 'nadia_tech',
     color: '#0ea5e9',
-    x: 1480,
-    y: 640,
-    vx: -50,
-    vy: 35,
-  },
-  {
-    id: 'peer-farhan',
-    name: 'Farhan Syahputra (NPC)',
-    studentClass: 'Kelas 9A',
-    characterPreset: 'dimas_hacker',
-    color: '#10b981',
-    x: 960,
-    y: 940,
-    vx: 50,
-    vy: -35,
-  },
-  {
-    id: 'peer-salma',
-    name: 'Salma Azzahra (NPC)',
-    studentClass: 'Kelas 7A',
-    characterPreset: 'siti_crypto',
-    color: '#f43f5e',
-    x: 1440,
-    y: 920,
-    vx: -50,
-    vy: -40,
+    x: 1520,
+    y: 930,
+    vx: -46,
+    vy: -28,
   },
 ];
 
@@ -150,6 +234,7 @@ function schedulePersistStateToDisk() {
         players: Array.from(r.players.values()),
         answers: r.answers,
         activeQuestionIds: r.activeQuestionIds,
+        chatMessages: r.chatMessages.slice(-60),
       }));
       const payload = {
         savedAt: Date.now(),
@@ -184,8 +269,14 @@ function loadPersistedStateFromDisk() {
         const pMap = new Map<string, ClassMapPlayer>();
         if (Array.isArray(r.players)) {
           for (const p of r.players) {
+            // Skip legacy 4 NPCs if we updated the template
+            if (p.isRoamingPeer && !ROAMING_PEERS_TEMPLATE.some((t) => t.id === p.id)) {
+              continue;
+            }
             pMap.set(p.id, {
               ...p,
+              facingAngle: typeof p.facingAngle === 'number' ? p.facingAngle : Math.PI,
+              jumpY: typeof p.jumpY === 'number' ? p.jumpY : 0,
               answeredQuestionIds: Array.isArray(p.answeredQuestionIds)
                 ? p.answeredQuestionIds
                 : [],
@@ -207,6 +298,8 @@ function loadPersistedStateFromDisk() {
           activeQuestionIds: Array.isArray(r.activeQuestionIds)
             ? r.activeQuestionIds
             : questionsStore.map((q) => q.id),
+          chatMessages: Array.isArray(r.chatMessages) ? r.chatMessages.slice(-60) : [],
+          versusMatches: new Map(),
         });
       }
     }
@@ -220,7 +313,6 @@ function computeSpawnPosition(room: ClassroomRoom, playerId: string): { x: numbe
   if (existing && !existing.isRoamingPeer) {
     return { x: existing.x, y: existing.y };
   }
-  // Spawn students in a visible circle on Lapangan Upacara MTsN 14 Halim (1200, 780)
   const humanPlayers = Array.from(room.players.values()).filter((p) => !p.isRoamingPeer);
   const idx = humanPlayers.length;
   const angle = (idx * 72 * Math.PI) / 180;
@@ -253,6 +345,8 @@ function getOrCreateRoom(
         y: peer.y,
         vx: peer.vx,
         vy: peer.vy,
+        facingAngle: Math.atan2(peer.vx, peer.vy),
+        jumpY: 0,
         score: 150,
         missionPoints: 100,
         collectedItemsCount: 2,
@@ -281,6 +375,19 @@ function getOrCreateRoom(
       players: playersMap,
       answers: [],
       activeQuestionIds: questionsStore.map((q) => q.id),
+      chatMessages: [
+        {
+          id: 'welcome-msg',
+          senderId: 'teacher-system',
+          senderName: 'Pak Azhary Mardhani, S.Kom',
+          senderClass: 'Guru Informatika',
+          senderRole: 'TEACHER',
+          senderColor: '#f59e0b',
+          text: 'Selamat datang di Open-World 3D MTsN 14 Halim! Silakan berjalan, sapa teman lewat Chat, dan ajak Versus 1v1!',
+          timestamp: Date.now(),
+        },
+      ],
+      versusMatches: new Map(),
     };
     rooms.set(pin, room);
     schedulePersistStateToDisk();
@@ -297,13 +404,54 @@ function getFilteredQuestions(categoryFilter: string): InformaticsQuestion[] {
   return filtered.length > 0 ? filtered : questionsStore;
 }
 
+function getSharedVersusMatches(): VersusMatchState[] {
+  const now = Date.now();
+  const list: VersusMatchState[] = [];
+  for (const r of rooms.values()) {
+    for (const [mId, match] of r.versusMatches.entries()) {
+      // Clean up old matches after 90 seconds
+      if (now - match.updatedAt > 90000) {
+        r.versusMatches.delete(mId);
+        continue;
+      }
+      list.push(match);
+    }
+  }
+  return list;
+}
+
 function serializeRoom(room: ClassroomRoom) {
   const qs = getFilteredQuestions(room.categoryFilter);
   const now = Date.now();
-  // Return all roaming peers + all human players active within the last 24 hours (with online status)
-  const visiblePlayers = Array.from(room.players.values()).filter(
-    (p) => p.isRoamingPeer || now - p.lastUpdated < 1000 * 60 * 60 * 24
-  );
+  // Merge all active human players across the shared MTsN 14 Halim arena so every student on any device meets in the same map
+  const mergedPlayersMap = new Map<string, ClassMapPlayer>();
+  for (const p of room.players.values()) {
+    if (p.isRoamingPeer || now - p.lastUpdated < 1000 * 60 * 60 * 2) {
+      mergedPlayersMap.set(p.id, p);
+    }
+  }
+  for (const otherRoom of rooms.values()) {
+    for (const p of otherRoom.players.values()) {
+      if (!p.isRoamingPeer && now - p.lastUpdated < 1000 * 60 * 60 * 2) {
+        const currentInMerged = mergedPlayersMap.get(p.id);
+        if (!currentInMerged || p.lastUpdated >= currentInMerged.lastUpdated) {
+          mergedPlayersMap.set(p.id, p);
+        }
+      }
+    }
+  }
+
+  // Merge recent chat messages across shared arena
+  const allChatMap = new Map<string, RoomChatMessage>();
+  for (const otherRoom of rooms.values()) {
+    for (const msg of otherRoom.chatMessages) {
+      allChatMap.set(msg.id, msg);
+    }
+  }
+  const mergedChats = Array.from(allChatMap.values())
+    .sort((a, b) => a.timestamp - b.timestamp)
+    .slice(-50);
+
   return {
     pin: room.pin,
     roomName: room.roomName,
@@ -314,9 +462,19 @@ function serializeRoom(room: ClassroomRoom) {
     currentQuestionIndex: room.currentQuestionIndex,
     totalQuestions: qs.length,
     timeLeftSec: room.timeLeftSec,
-    players: visiblePlayers,
+    players: Array.from(mergedPlayersMap.values()),
     answers: room.answers,
+    chatMessages: mergedChats,
+    versusMatches: getSharedVersusMatches(),
   };
+}
+
+function findPlayerAcrossRooms(playerId: string): ClassMapPlayer | undefined {
+  for (const r of rooms.values()) {
+    const p = r.players.get(playerId);
+    if (p) return p;
+  }
+  return undefined;
 }
 
 function upsertPlayerInRoom(
@@ -330,6 +488,10 @@ function upsertPlayerInRoom(
     color?: string;
     x?: number;
     y?: number;
+    vx?: number;
+    vy?: number;
+    facingAngle?: number;
+    jumpY?: number;
     score?: number;
     missionPoints?: number;
     collectedItemsCount?: number;
@@ -338,7 +500,6 @@ function upsertPlayerInRoom(
 ): ClassMapPlayer {
   let existing = room.players.get(payload.playerId);
 
-  // If browser storage was cleared, also check if a student with the exact same Name + Class exists in this room
   if (!existing && payload.playerName) {
     const cleanName = payload.playerName.trim().toLowerCase();
     for (const candidate of room.players.values()) {
@@ -348,7 +509,6 @@ function upsertPlayerInRoom(
         (!payload.studentClass || candidate.studentClass === payload.studentClass)
       ) {
         existing = candidate;
-        // Migrate to new playerId if needed
         if (existing.id !== payload.playerId) {
           room.players.delete(existing.id);
         }
@@ -385,8 +545,20 @@ function upsertPlayerInRoom(
         : existing
         ? existing.y
         : spawn.y,
-    vx: existing ? existing.vx : 0,
-    vy: existing ? existing.vy : 0,
+    vx: typeof payload.vx === 'number' ? payload.vx : existing ? existing.vx : 0,
+    vy: typeof payload.vy === 'number' ? payload.vy : existing ? existing.vy : 0,
+    facingAngle:
+      typeof payload.facingAngle === 'number'
+        ? payload.facingAngle
+        : existing
+        ? existing.facingAngle
+        : Math.PI,
+    jumpY:
+      typeof payload.jumpY === 'number'
+        ? payload.jumpY
+        : existing
+        ? existing.jumpY
+        : 0,
     score: Math.max(existing?.score || 0, typeof payload.score === 'number' ? payload.score : 0),
     missionPoints:
       typeof payload.missionPoints === 'number'
@@ -405,6 +577,8 @@ function upsertPlayerInRoom(
     currentSector: existing?.currentSector || null,
     lockedOption: existing?.lockedOption || null,
     lockTimeMs: existing?.lockTimeMs || null,
+    lastChatText: existing?.lastChatText,
+    lastChatTime: existing?.lastChatTime,
     lastUpdated: Date.now(),
     isRoamingPeer: false,
   };
@@ -424,14 +598,150 @@ async function startServer() {
   const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
   const clientRoomMap = new Map<WebSocket, { pin: string; playerId: string }>();
 
-  function broadcastToRoom(pin: string, payload: unknown) {
-    const normalizedPin = normalizeRoomPin(pin);
+  function broadcastToRoom(_pin: string, payload: unknown) {
     const message = JSON.stringify(payload);
-    for (const [client, meta] of clientRoomMap.entries()) {
-      if (meta.pin === normalizedPin && client.readyState === WebSocket.OPEN) {
+    for (const [client] of clientRoomMap.entries()) {
+      if (client.readyState === WebSocket.OPEN) {
         client.send(message);
       }
     }
+  }
+
+  // Helper to create a Versus Challenge (Mutual Consent for real students, auto-accept for training bots)
+  function createVersusChallenge(
+    rawPin: string,
+    challengerId: string,
+    challengerName: string,
+    challengerClass: string,
+    opponentId: string
+  ): VersusMatchState | null {
+    const pin = normalizeRoomPin(rawPin);
+    const room = getOrCreateRoom(pin);
+    const opponent = findPlayerAcrossRooms(opponentId);
+    if (!opponent) return null;
+
+    // Cancel any previous pending match involving challenger
+    for (const r of rooms.values()) {
+      for (const [mId, existing] of r.versusMatches.entries()) {
+        if (
+          (existing.challengerId === challengerId || existing.opponentId === challengerId) &&
+          existing.status === 'PENDING_CONSENT'
+        ) {
+          r.versusMatches.delete(mId);
+        }
+      }
+    }
+
+    const isBot = Boolean(opponent.isRoamingPeer);
+    const matchId = `vs-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const match: VersusMatchState = {
+      id: matchId,
+      pin,
+      status: isBot ? 'IN_PROGRESS' : 'PENDING_CONSENT',
+      challengerId,
+      challengerName: challengerName || 'Siswa MTsN 14',
+      challengerClass: challengerClass || 'Kelas 8A',
+      opponentId: opponent.id,
+      opponentName: opponent.name,
+      opponentClass: opponent.studentClass,
+      isBotOpponent: isBot,
+      roundIdx: 0,
+      questions: pickVersusQuestions(),
+      challengerScore: 0,
+      opponentScore: 0,
+      challengerAnsweredRound: -1,
+      opponentAnsweredRound: -1,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+
+    room.versusMatches.set(matchId, match);
+    broadcastToRoom(pin, { type: 'versus:update', payload: match });
+    return match;
+  }
+
+  function respondToVersusChallenge(
+    matchId: string,
+    accept: boolean
+  ): VersusMatchState | null {
+    for (const r of rooms.values()) {
+      const match = r.versusMatches.get(matchId);
+      if (match) {
+        match.status = accept ? 'IN_PROGRESS' : 'DECLINED';
+        match.updatedAt = Date.now();
+        broadcastToRoom(r.pin, { type: 'versus:update', payload: match });
+        return match;
+      }
+    }
+    return null;
+  }
+
+  function submitVersusRoundAnswer(
+    matchId: string,
+    playerId: string,
+    roundIdx: number,
+    selectedIndex: number,
+    timeLeftSec: number
+  ): VersusMatchState | null {
+    for (const r of rooms.values()) {
+      const match = r.versusMatches.get(matchId);
+      if (!match || match.status !== 'IN_PROGRESS') continue;
+
+      const currentQ = match.questions[roundIdx] || match.questions[match.roundIdx];
+      if (!currentQ) continue;
+
+      const isCorrect = selectedIndex === currentQ.correctIndex;
+      const pointsGain = isCorrect ? 100 + Math.max(0, Math.min(8, timeLeftSec)) * 10 : 0;
+
+      if (playerId === match.challengerId && match.challengerAnsweredRound < roundIdx) {
+        match.challengerAnsweredRound = roundIdx;
+        match.challengerScore += pointsGain;
+      } else if (playerId === match.opponentId && match.opponentAnsweredRound < roundIdx) {
+        match.opponentAnsweredRound = roundIdx;
+        match.opponentScore += pointsGain;
+      }
+
+      // If opponent is a training bot, simulate bot's answer immediately
+      if (match.isBotOpponent && match.opponentAnsweredRound < roundIdx) {
+        match.opponentAnsweredRound = roundIdx;
+        const botCorrect = Math.random() < 0.65;
+        match.opponentScore += botCorrect ? 115 : 0;
+      }
+
+      // Advance round or finish match once BOTH players have answered this round!
+      if (
+        match.challengerAnsweredRound >= match.roundIdx &&
+        match.opponentAnsweredRound >= match.roundIdx
+      ) {
+        if (match.roundIdx + 1 < match.questions.length) {
+          match.roundIdx += 1;
+        } else {
+          match.status = 'FINISHED';
+          // Credit MP & Score to both players on server
+          const challengerPlayer = findPlayerAcrossRooms(match.challengerId);
+          const opponentPlayer = findPlayerAcrossRooms(match.opponentId);
+          const challengerWon = match.challengerScore >= match.opponentScore;
+          const oppWon = match.opponentScore >= match.challengerScore;
+
+          if (challengerPlayer && !challengerPlayer.isRoamingPeer) {
+            challengerPlayer.missionPoints += challengerWon ? 100 : 45;
+            challengerPlayer.score += challengerWon ? 150 : 60;
+            challengerPlayer.lastUpdated = Date.now();
+          }
+          if (opponentPlayer && !opponentPlayer.isRoamingPeer) {
+            opponentPlayer.missionPoints += oppWon ? 100 : 45;
+            opponentPlayer.score += oppWon ? 150 : 60;
+            opponentPlayer.lastUpdated = Date.now();
+          }
+          schedulePersistStateToDisk();
+        }
+      }
+
+      match.updatedAt = Date.now();
+      broadcastToRoom(r.pin, { type: 'versus:update', payload: match });
+      return match;
+    }
+    return null;
   }
 
   app.get('/api/bootstrap', (_req, res) => {
@@ -540,6 +850,8 @@ async function startServer() {
       y,
       vx,
       vy,
+      facingAngle,
+      jumpY,
       score,
       missionPoints,
       collectedItemsCount,
@@ -566,6 +878,10 @@ async function startServer() {
         color,
         x,
         y,
+        vx,
+        vy,
+        facingAngle,
+        jumpY,
         score,
         missionPoints,
         collectedItemsCount,
@@ -584,6 +900,8 @@ async function startServer() {
       }
       if (typeof vx === 'number') p.vx = vx;
       if (typeof vy === 'number') p.vy = vy;
+      if (typeof facingAngle === 'number') p.facingAngle = facingAngle;
+      if (typeof jumpY === 'number') p.jumpY = jumpY;
       if (typeof score === 'number' && score > p.score) p.score = score;
       if (typeof missionPoints === 'number') p.missionPoints = missionPoints;
       if (typeof collectedItemsCount === 'number' && collectedItemsCount > p.collectedItemsCount) {
@@ -605,6 +923,101 @@ async function startServer() {
       room: serializeRoom(room),
       player: p,
     });
+  });
+
+  // Real-Time Chat Endpoint (Also triggers 3D Overhead Speech Bubble above student avatar!)
+  app.post('/api/room/chat', (req, res) => {
+    const {
+      pin: rawPin,
+      senderId,
+      senderName,
+      senderClass,
+      senderRole,
+      senderColor,
+      text,
+    } = req.body || {};
+
+    const cleanText = String(text || '').trim().slice(0, 140);
+    if (!senderId || !cleanText) {
+      res.status(400).json({ error: 'Pesan chat kosong.' });
+      return;
+    }
+
+    const pin = normalizeRoomPin(rawPin);
+    const room = getOrCreateRoom(pin);
+    const msg: RoomChatMessage = {
+      id: `chat-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      senderId,
+      senderName: senderName || 'Siswa MTsN 14',
+      senderClass: senderClass || 'Kelas 8A',
+      senderRole: senderRole === 'TEACHER' ? 'TEACHER' : 'STUDENT',
+      senderColor: senderColor || '#38bdf8',
+      text: cleanText,
+      timestamp: Date.now(),
+    };
+
+    room.chatMessages.push(msg);
+    if (room.chatMessages.length > 60) {
+      room.chatMessages = room.chatMessages.slice(-60);
+    }
+
+    const p = findPlayerAcrossRooms(senderId);
+    if (p) {
+      p.lastChatText = cleanText;
+      p.lastChatTime = msg.timestamp;
+      p.lastUpdated = Date.now();
+    }
+
+    schedulePersistStateToDisk();
+    broadcastToRoom(pin, { type: 'chat:message', payload: msg });
+    res.json({ ok: true, message: msg });
+  });
+
+  // Real-Time Mutual-Consent Versus Endpoints
+  app.post('/api/versus/invite', (req, res) => {
+    const { pin, challengerId, challengerName, challengerClass, opponentId } = req.body || {};
+    if (!challengerId || !opponentId) {
+      res.status(400).json({ error: 'Data penantang atau lawan tidak lengkap.' });
+      return;
+    }
+    const match = createVersusChallenge(
+      pin || 'MTN14',
+      challengerId,
+      challengerName,
+      challengerClass,
+      opponentId
+    );
+    if (!match) {
+      res.status(404).json({ error: 'Siswa lawan tidak ditemukan di map.' });
+      return;
+    }
+    res.json({ match });
+  });
+
+  app.post('/api/versus/respond', (req, res) => {
+    const { matchId, accept } = req.body || {};
+    const match = respondToVersusChallenge(String(matchId || ''), Boolean(accept));
+    if (!match) {
+      res.status(404).json({ error: 'Tantangan duel tidak ditemukan.' });
+      return;
+    }
+    res.json({ match });
+  });
+
+  app.post('/api/versus/answer', (req, res) => {
+    const { matchId, playerId, roundIdx, selectedIndex, timeLeftSec } = req.body || {};
+    const match = submitVersusRoundAnswer(
+      String(matchId || ''),
+      String(playerId || ''),
+      Number(roundIdx) || 0,
+      Number(selectedIndex),
+      Number(timeLeftSec) || 5
+    );
+    if (!match) {
+      res.status(404).json({ error: 'Sesi duel tidak ditemukan.' });
+      return;
+    }
+    res.json({ match });
   });
 
   app.post('/api/materials', (req, res) => {
@@ -667,7 +1080,7 @@ async function startServer() {
     res.json({ ok: true, totalRecorded: globalAnswerHistory.length });
   });
 
-  // Roaming classmates patrol loop along MTsN 14 Halim walkways (every 250ms)
+  // Roaming training bots patrol loop along MTsN 14 Halim walkways (every 250ms)
   setInterval(() => {
     for (const room of rooms.values()) {
       for (const p of room.players.values()) {
@@ -679,6 +1092,8 @@ async function startServer() {
         if (p.y < 260 || p.y > MAP_HEIGHT - 260) p.vy *= -1;
         p.x = Math.max(280, Math.min(MAP_WIDTH - 280, p.x));
         p.y = Math.max(240, Math.min(MAP_HEIGHT - 240, p.y));
+        p.facingAngle = Math.atan2(p.vx, p.vy);
+        p.lastUpdated = Date.now();
 
         broadcastToRoom(room.pin, {
           type: 'player:moved',
@@ -688,10 +1103,13 @@ async function startServer() {
             y: Math.round(p.y),
             vx: p.vx,
             vy: p.vy,
+            facingAngle: p.facingAngle,
+            jumpY: 0,
             score: p.score,
             missionPoints: p.missionPoints,
             collectedItemsCount: p.collectedItemsCount,
             answeredCount: p.answeredCount,
+            lastUpdated: p.lastUpdated,
           },
         });
       }
@@ -773,6 +1191,12 @@ async function startServer() {
           p.y = Math.max(60, Math.min(MAP_HEIGHT - 60, Number(payload.y) || p.y));
           p.vx = Number(payload.vx) || 0;
           p.vy = Number(payload.vy) || 0;
+          if (typeof payload.facingAngle === 'number') {
+            p.facingAngle = payload.facingAngle;
+          }
+          if (typeof payload.jumpY === 'number') {
+            p.jumpY = payload.jumpY;
+          }
           p.lastUpdated = Date.now();
 
           if (typeof payload.scoreBonus === 'number' && payload.scoreBonus > 0) {
@@ -799,12 +1223,66 @@ async function startServer() {
               y: p.y,
               vx: p.vx,
               vy: p.vy,
+              facingAngle: p.facingAngle,
+              jumpY: p.jumpY,
               score: p.score,
               missionPoints: p.missionPoints,
               collectedItemsCount: p.collectedItemsCount,
               answeredCount: p.answeredCount,
+              lastChatText: p.lastChatText,
+              lastChatTime: p.lastChatTime,
+              lastUpdated: p.lastUpdated,
             },
           });
+        } else if (type === 'chat:send') {
+          const meta = clientRoomMap.get(ws);
+          const pin = normalizeRoomPin(payload?.pin || meta?.pin || 'MTN14');
+          const room = getOrCreateRoom(pin);
+          const senderId = String(payload?.senderId || meta?.playerId || '');
+          const cleanText = String(payload?.text || '').trim().slice(0, 140);
+          if (!senderId || !cleanText) return;
+
+          const chatMsg: RoomChatMessage = {
+            id: `chat-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            senderId,
+            senderName: payload?.senderName || 'Siswa MTsN 14',
+            senderClass: payload?.senderClass || 'Kelas 8A',
+            senderRole: payload?.senderRole === 'TEACHER' ? 'TEACHER' : 'STUDENT',
+            senderColor: payload?.senderColor || '#38bdf8',
+            text: cleanText,
+            timestamp: Date.now(),
+          };
+          room.chatMessages.push(chatMsg);
+          if (room.chatMessages.length > 60) {
+            room.chatMessages = room.chatMessages.slice(-60);
+          }
+          const p = findPlayerAcrossRooms(senderId);
+          if (p) {
+            p.lastChatText = cleanText;
+            p.lastChatTime = chatMsg.timestamp;
+            p.lastUpdated = Date.now();
+          }
+          schedulePersistStateToDisk();
+          broadcastToRoom(pin, { type: 'chat:message', payload: chatMsg });
+        } else if (type === 'versus:invite') {
+          const meta = clientRoomMap.get(ws);
+          createVersusChallenge(
+            payload?.pin || meta?.pin || 'MTN14',
+            String(payload?.challengerId || meta?.playerId || ''),
+            String(payload?.challengerName || 'Siswa MTsN 14'),
+            String(payload?.challengerClass || 'Kelas 8A'),
+            String(payload?.opponentId || '')
+          );
+        } else if (type === 'versus:respond') {
+          respondToVersusChallenge(String(payload?.matchId || ''), Boolean(payload?.accept));
+        } else if (type === 'versus:answer') {
+          submitVersusRoundAnswer(
+            String(payload?.matchId || ''),
+            String(payload?.playerId || ''),
+            Number(payload?.roundIdx) || 0,
+            Number(payload?.selectedIndex),
+            Number(payload?.timeLeftSec) || 5
+          );
         } else if (type === 'player:answer_teacher_question') {
           const meta = clientRoomMap.get(ws);
           if (!meta) return;

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import {
@@ -112,6 +112,8 @@ export interface MapPlayerEntity {
   y: number;
   vx: number;
   vy: number;
+  facingAngle?: number;
+  jumpY?: number;
   score: number;
   missionPoints?: number;
   collectedItemsCount?: number;
@@ -120,6 +122,9 @@ export interface MapPlayerEntity {
   hp: number;
   currentSector: OptionKey | null;
   lockedOption: OptionKey | null;
+  lastChatText?: string;
+  lastChatTime?: number;
+  lastUpdated?: number;
   isRoamingPeer?: boolean;
 }
 
@@ -222,11 +227,14 @@ interface CyberArenaCanvasProps {
   materials: InformaticsMaterial[];
   currentQuestion: InformaticsQuestion | null;
   teleportCommand?: { x: number; y: number; seq: number } | null;
+  localChatBubble?: { text: string; timestamp: number } | null;
   onEmitLocalMove: (
     x: number,
     y: number,
     vx: number,
     vy: number,
+    facingAngle: number,
+    jumpY: number,
     scoreBonus?: number,
     missionPointsDelta?: number,
     collectedDelta?: number
@@ -369,28 +377,58 @@ function drawOverheadTag(
   title: string,
   subtitle: string,
   accentColor: string,
-  isTeacher = false
+  isTeacher = false,
+  chatBubbleText = ''
 ) {
   const ctx = canvas.getContext('2d')!;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  ctx.fillStyle = isTeacher ? 'rgba(24, 24, 27, 0.95)' : 'rgba(15, 23, 42, 0.9)';
+  // 1. Optional Roblox-Style Overhead Speech Bubble (Top half of canvas: y = 6..102)
+  if (chatBubbleText && chatBubbleText.trim().length > 0) {
+    const cleanChat =
+      chatBubbleText.length > 36 ? chatBubbleText.slice(0, 34) + '..' : chatBubbleText;
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.97)';
+    ctx.strokeStyle = '#0f172a';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.roundRect(18, 8, canvas.width - 36, 76, 22);
+    ctx.fill();
+    ctx.stroke();
+
+    // Speech pointer triangle pointing down to avatar head
+    ctx.beginPath();
+    ctx.moveTo(canvas.width / 2 - 14, 84);
+    ctx.lineTo(canvas.width / 2 + 14, 84);
+    ctx.lineTo(canvas.width / 2, 102);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = '#0f172a';
+    ctx.font = '800 24px "Plus Jakarta Sans", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(`"${cleanChat}"`, canvas.width / 2, 54);
+  }
+
+  // 2. Overhead Nameplate Badge (Bottom half of canvas: y = 108..212)
+  const tagY = 108;
+  const tagH = 104;
+  ctx.fillStyle = isTeacher ? 'rgba(24, 24, 27, 0.95)' : 'rgba(15, 23, 42, 0.92)';
   ctx.strokeStyle = accentColor;
   ctx.lineWidth = 6;
   ctx.beginPath();
-  ctx.roundRect(10, 10, canvas.width - 20, canvas.height - 20, 24);
+  ctx.roundRect(10, tagY, canvas.width - 20, tagH, 24);
   ctx.fill();
   ctx.stroke();
 
   ctx.fillStyle = '#ffffff';
-  ctx.font = '800 30px "Outfit", sans-serif';
+  ctx.font = '800 29px "Outfit", sans-serif';
   ctx.textAlign = 'center';
   const cleanTitle = title.length > 22 ? title.slice(0, 20) + '..' : title;
-  ctx.fillText(cleanTitle, canvas.width / 2, 56);
+  ctx.fillText(cleanTitle, canvas.width / 2, tagY + 46);
 
   ctx.fillStyle = accentColor;
-  ctx.font = '700 22px "JetBrains Mono", monospace';
-  ctx.fillText(subtitle, canvas.width / 2, 94);
+  ctx.font = '700 21px "JetBrains Mono", monospace';
+  ctx.fillText(subtitle, canvas.width / 2, tagY + 82);
 }
 
 export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
@@ -407,6 +445,7 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
   materials,
   currentQuestion,
   teleportCommand,
+  localChatBubble,
   onEmitLocalMove,
   onNearbyTeacherPostChange,
   onNearbyVersusTargetChange,
@@ -415,6 +454,11 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
 }) => {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const radarCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const touchStickRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const mobileJumpQueuedRef = useRef<boolean>(false);
+  const joystickTouchIdRef = useRef<number | null>(null);
+  const joystickCenterRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [joystickKnob, setJoystickKnob] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
 
   const propsRef = useRef({
     joinedRoom,
@@ -430,6 +474,7 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
     materials,
     currentQuestion,
     teleportCommand,
+    localChatBubble,
     onEmitLocalMove,
     onNearbyTeacherPostChange,
     onNearbyVersusTargetChange,
@@ -452,6 +497,7 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
       materials,
       currentQuestion,
       teleportCommand,
+      localChatBubble,
       onEmitLocalMove,
       onNearbyTeacherPostChange,
       onNearbyVersusTargetChange,
@@ -472,6 +518,7 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
     materials,
     currentQuestion,
     teleportCommand,
+    localChatBubble,
     onEmitLocalMove,
     onNearbyTeacherPostChange,
     onNearbyVersusTargetChange,
@@ -755,21 +802,21 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
         root.add(hairTop);
       }
 
-      // 9. Overhead Nameplate Sprite
+      // 9. Overhead Nameplate + Roblox Speech Bubble Sprite
       const nameCanvas = document.createElement('canvas');
       nameCanvas.width = 512;
-      nameCanvas.height = 128;
+      nameCanvas.height = 220;
       const nameTexture = new THREE.CanvasTexture(nameCanvas);
       nameTexture.colorSpace = THREE.SRGBColorSpace;
       nameTexture.anisotropy = maxAnisotropy;
 
-      drawOverheadTag(nameCanvas, nameText, subText, badgeColor, isTeacherNpc);
+      drawOverheadTag(nameCanvas, nameText, subText, badgeColor, isTeacherNpc, '');
 
       const nameSprite = new THREE.Sprite(
         new THREE.SpriteMaterial({ map: nameTexture, transparent: true, depthWrite: false })
       );
-      nameSprite.position.set(0, 5.5, 0);
-      nameSprite.scale.set(7.2, 1.8, 1);
+      nameSprite.position.set(0, 6.2, 0);
+      nameSprite.scale.set(7.4, 3.18, 1);
       root.add(nameSprite);
 
       return {
@@ -819,8 +866,45 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
     };
 
     // ========================================================================
-    // 4A. TIANG BENDERA MERAH PUTIH & GAWANG FUTSAL DI LAPANGAN UPACARA MTsN 14
+    // 4A. TIANG BENDERA MERAH PUTIH & ROBLOX JUMP PADS DI LAPANGAN UPACARA MTsN 14
     // ========================================================================
+    const ROBLOX_JUMP_PADS = [
+      { mapX: 980, mapY: 620 },
+      { mapX: 1420, mapY: 620 },
+      { mapX: 980, mapY: 940 },
+      { mapX: 1420, mapY: 940 },
+    ];
+    ROBLOX_JUMP_PADS.forEach((pad) => {
+      const padGroup = new THREE.Group();
+      padGroup.position.set(to3DX(pad.mapX), 0, to3DZ(pad.mapY));
+      const padBase = new THREE.Mesh(
+        new THREE.CylinderGeometry(2.3, 2.6, 0.35, 24),
+        new THREE.MeshStandardMaterial({
+          color: 0x0ea5e9,
+          emissive: 0x0284c7,
+          emissiveIntensity: 0.75,
+          roughness: 0.2,
+          metalness: 0.6,
+        })
+      );
+      padBase.position.y = 0.18;
+      padGroup.add(padBase);
+
+      const padRing = new THREE.Mesh(
+        new THREE.RingGeometry(2.5, 3.1, 24),
+        new THREE.MeshBasicMaterial({
+          color: 0x38bdf8,
+          side: THREE.DoubleSide,
+          transparent: true,
+          opacity: 0.7,
+        })
+      );
+      padRing.rotation.x = -Math.PI / 2;
+      padRing.position.y = 0.06;
+      padGroup.add(padRing);
+      scene.add(padGroup);
+    });
+
     const flagpoleGroup = new THREE.Group();
     flagpoleGroup.position.set(to3DX(1200), 0, to3DZ(585));
     const flagpoleBase = new THREE.Mesh(
@@ -1195,6 +1279,10 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
       isDraggingOrbit = false;
     };
 
+    let cameraTouchId: number | null = null;
+    let lastTouchX = 0;
+    let lastTouchY = 0;
+
     const handleMouseDown = (e: MouseEvent) => {
       if (e.button === 2 || e.button === 0) {
         isDraggingOrbit = true;
@@ -1217,6 +1305,44 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
       isDraggingOrbit = false;
     };
 
+    const handleTouchStartCanvas = (e: TouchEvent) => {
+      if (cameraTouchId !== null) return;
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        const t = e.changedTouches[i];
+        if (t.identifier === joystickTouchIdRef.current) continue;
+        cameraTouchId = t.identifier;
+        lastTouchX = t.clientX;
+        lastTouchY = t.clientY;
+        break;
+      }
+    };
+
+    const handleTouchMoveCanvas = (e: TouchEvent) => {
+      if (cameraTouchId === null) return;
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        const t = e.changedTouches[i];
+        if (t.identifier === cameraTouchId) {
+          const dx = t.clientX - lastTouchX;
+          const dy = t.clientY - lastTouchY;
+          lastTouchX = t.clientX;
+          lastTouchY = t.clientY;
+          cameraYaw -= dx * 0.0075;
+          cameraPitch = THREE.MathUtils.clamp(cameraPitch + dy * 0.0055, 0.16, 1.25);
+          break;
+        }
+      }
+    };
+
+    const handleTouchEndCanvas = (e: TouchEvent) => {
+      if (cameraTouchId === null) return;
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        if (e.changedTouches[i].identifier === cameraTouchId) {
+          cameraTouchId = null;
+          break;
+        }
+      }
+    };
+
     const handleWheel = (e: WheelEvent) => {
       cameraDist = THREE.MathUtils.clamp(cameraDist + e.deltaY * 0.02, 11, 48);
     };
@@ -1229,6 +1355,10 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
     renderer.domElement.addEventListener('mousedown', handleMouseDown);
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
+    renderer.domElement.addEventListener('touchstart', handleTouchStartCanvas, { passive: true });
+    window.addEventListener('touchmove', handleTouchMoveCanvas, { passive: true });
+    window.addEventListener('touchend', handleTouchEndCanvas, { passive: true });
+    window.addEventListener('touchcancel', handleTouchEndCanvas, { passive: true });
     renderer.domElement.addEventListener('wheel', handleWheel, { passive: true });
     renderer.domElement.addEventListener('contextmenu', handleContextMenu);
 
@@ -1299,14 +1429,21 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
           );
           localJumpY = 2.2;
           localJumpVy = 6;
-          currentProps.onEmitLocalMove(Math.round(localMapX), Math.round(localMapY), 0, 0);
+          currentProps.onEmitLocalMove(
+            Math.round(localMapX),
+            Math.round(localMapY),
+            0,
+            0,
+            Number(localFacingAngle.toFixed(3)),
+            Number(localJumpY.toFixed(2))
+          );
         }
 
         if (heldKeys.has('KeyQ')) cameraYaw += 1.8 * dt;
         if (heldKeys.has('KeyE')) cameraYaw -= 1.8 * dt;
 
-        let forwardInput = 0;
-        let rightInput = 0;
+        let forwardInput = -touchStickRef.current.y;
+        let rightInput = touchStickRef.current.x;
         if (heldKeys.has('KeyW') || heldKeys.has('ArrowUp')) forwardInput += 1;
         if (heldKeys.has('KeyS') || heldKeys.has('ArrowDown')) forwardInput -= 1;
         if (heldKeys.has('KeyD') || heldKeys.has('ArrowRight')) rightInput += 1;
@@ -1314,20 +1451,22 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
 
         let moveX = 0;
         let moveY = 0;
-        if (forwardInput !== 0 || rightInput !== 0) {
+        const inputMag = Math.min(1, Math.hypot(forwardInput, rightInput));
+        if (inputMag > 0.05) {
           const sinY = Math.sin(cameraYaw);
           const cosY = Math.cos(cameraYaw);
           const rawX = -sinY * forwardInput + cosY * rightInput;
           const rawZ = -cosY * forwardInput - sinY * rightInput;
           const len = Math.hypot(rawX, rawZ) || 1;
-          moveX = rawX / len;
-          moveY = rawZ / len;
+          moveX = (rawX / len) * inputMag;
+          moveY = (rawZ / len) * inputMag;
         }
 
         localDashCooldown = Math.max(0, localDashCooldown - dt);
         localDashTimer = Math.max(0, localDashTimer - dt);
 
-        if (justPressedKeys.has('Space')) {
+        if (justPressedKeys.has('Space') || mobileJumpQueuedRef.current) {
+          mobileJumpQueuedRef.current = false;
           if (localJumpY <= 0.01) {
             localJumpVy = 17.5;
             soundEngine.playDash();
@@ -1335,6 +1474,18 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
           if (localDashCooldown <= 0) {
             localDashCooldown = 0.65;
             localDashTimer = 0.25;
+          }
+        }
+
+        // Check Roblox-Style Open-World Jump Pads in Lapangan Upacara MTsN 14
+        if (localJumpY <= 0.2) {
+          for (const pad of ROBLOX_JUMP_PADS) {
+            if (Math.hypot(localMapX - pad.mapX, localMapY - pad.mapY) <= 32) {
+              localJumpVy = 29.5;
+              localJumpY = 0.35;
+              soundEngine.playDash();
+              break;
+            }
           }
         }
 
@@ -1430,12 +1581,14 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
 
         wsEmitCooldown -= dt;
         if (wsEmitCooldown <= 0 || scoreGain > 0 || mpGain > 0) {
-          wsEmitCooldown = 0.08;
+          wsEmitCooldown = 0.05; // 20Hz high-frequency real-time movement sync
           currentProps.onEmitLocalMove(
             Math.round(localMapX),
             Math.round(localMapY),
             Math.round(vx),
             Math.round(vy),
+            Number(localFacingAngle.toFixed(3)),
+            Number(localJumpY.toFixed(2)),
             scoreGain,
             mpGain,
             itemsCountGain
@@ -1454,8 +1607,9 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
       }
 
       // ======================================================================
-      // SYNC & ANIMATE ALL 3D HUMANOID STUDENT CHARACTERS
+      // SYNC & ANIMATE ALL 3D HUMANOID STUDENT CHARACTERS + ROBLOX SPEECH BUBBLES
       // ======================================================================
+      const nowMs = Date.now();
       const activeIds = new Set<string>();
       const localRec = currentProps.players.find((p) => p.id === currentProps.localPlayerId);
       const localMp = localRec?.missionPoints ?? 100;
@@ -1493,7 +1647,16 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
         localRig.leftArmPivot.rotation.x = -swing * 0.85;
         localRig.rightArmPivot.rotation.x = swing * 0.85;
 
-        const sig = `${currentProps.localPlayerName}|${currentProps.localPlayerClass}|${localMp}|${localScore}`;
+        const localBubbleSource = currentProps.localChatBubble || {
+          text: localRec?.lastChatText || '',
+          timestamp: localRec?.lastChatTime || 0,
+        };
+        const activeLocalChat =
+          localBubbleSource.text && nowMs - localBubbleSource.timestamp < 9000
+            ? localBubbleSource.text
+            : '';
+
+        const sig = `${currentProps.localPlayerName}|${currentProps.localPlayerClass}|${localMp}|${localScore}|${activeLocalChat}`;
         if (localRig.lastSignature !== sig) {
           localRig.lastSignature = sig;
           drawOverheadTag(
@@ -1501,7 +1664,8 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
             currentProps.localPlayerName,
             `${currentProps.localPlayerClass} · ${localMp} MP · $${localScore}`,
             '#38bdf8',
-            false
+            false,
+            activeLocalChat
           );
           localRig.nameTexture.needsUpdate = true;
         }
@@ -1523,54 +1687,107 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
         const isOnlineHuman = !rp.isRoamingPeer;
         const badgeColor = isOnlineHuman ? '#10b981' : '#fbbf24';
         const subLabel = isOnlineHuman
-          ? `● ONLINE · ${rp.studentClass} · [V] VERSUS`
-          : `${rp.studentClass} · [V] VERSUS`;
+          ? `● ONLINE · ${rp.studentClass} · [V] AJAK DUEL`
+          : `${rp.studentClass} · [V] LATIHAN DUEL`;
 
         if (!rig) {
           rig = buildHumanoidCharacter(preset, rp.name, subLabel, badgeColor, false);
-          rig.group.position.set(to3DX(rp.x), 0, to3DZ(rp.y));
+          rig.group.position.set(to3DX(rp.x), rp.jumpY || 0, to3DZ(rp.y));
+          if (typeof rp.facingAngle === 'number') {
+            rig.group.rotation.y = rp.facingAngle;
+          }
           scene.add(rig.group);
           playerRigs.set(rp.id, rig);
         }
 
-        const tx = to3DX(rp.x);
-        const tz = to3DZ(rp.y);
+        // Dead-reckoning prediction for silky-smooth real-time movement between packets
+        const ageSec = rp.lastUpdated
+          ? Math.min(0.18, Math.max(0, (nowMs - rp.lastUpdated) / 1000))
+          : 0;
+        const predictedMapX = THREE.MathUtils.clamp(
+          rp.x + (rp.vx || 0) * ageSec * 0.45,
+          60,
+          WORLD_WIDTH - 60
+        );
+        const predictedMapY = THREE.MathUtils.clamp(
+          rp.y + (rp.vy || 0) * ageSec * 0.45,
+          60,
+          WORLD_HEIGHT - 60
+        );
+
+        const tx = to3DX(predictedMapX);
+        const tz = to3DZ(predictedMapY);
+        const ty = typeof rp.jumpY === 'number' ? Math.max(0, rp.jumpY) : 0;
+
         const dx = tx - rig.group.position.x;
         const dz = tz - rig.group.position.z;
         const distMoved = Math.hypot(dx, dz);
 
-        if (distMoved > 35) {
+        if (distMoved > 38) {
           // Instant snap if player teleported across the map
           rig.group.position.x = tx;
           rig.group.position.z = tz;
+          rig.group.position.y = ty;
         } else {
-          rig.group.position.x = THREE.MathUtils.damp(rig.group.position.x, tx, 10, dt);
-          rig.group.position.z = THREE.MathUtils.damp(rig.group.position.z, tz, 10, dt);
+          rig.group.position.x = THREE.MathUtils.damp(rig.group.position.x, tx, 14, dt);
+          rig.group.position.z = THREE.MathUtils.damp(rig.group.position.z, tz, 14, dt);
+          rig.group.position.y = THREE.MathUtils.damp(rig.group.position.y, ty, 16, dt);
         }
 
-        if (distMoved > 0.05) {
-          const targetRot = Math.atan2(dx, dz);
-          rig.group.rotation.y = THREE.MathUtils.damp(rig.group.rotation.y, targetRot, 10, dt);
-          rig.walkPhase += dt * 9;
-          const sw = Math.sin(rig.walkPhase) * 0.55;
+        // Accurate 3D facing rotation (uses exact facingAngle sent by the remote student!)
+        const remoteSpeed = Math.hypot(rp.vx || 0, rp.vy || 0);
+        const desiredRot =
+          typeof rp.facingAngle === 'number'
+            ? rp.facingAngle
+            : distMoved > 0.03
+            ? Math.atan2(dx, dz)
+            : rig.group.rotation.y;
+
+        let rotDiff = desiredRot - rig.group.rotation.y;
+        while (rotDiff > Math.PI) rotDiff -= Math.PI * 2;
+        while (rotDiff < -Math.PI) rotDiff += Math.PI * 2;
+        rig.group.rotation.y += rotDiff * Math.min(1, dt * 14);
+
+        // Accurate 3D walking/running/jumping limb animation matching remote player's motion
+        if (ty > 0.15) {
+          rig.leftLegPivot.rotation.x = 0.78;
+          rig.rightLegPivot.rotation.x = -0.78;
+          rig.leftArmPivot.rotation.x = -0.7;
+          rig.rightArmPivot.rotation.x = 0.7;
+        } else if (remoteSpeed > 18 || distMoved > 0.035) {
+          const animFreq = remoteSpeed > 480 ? 15 : 10.5;
+          rig.walkPhase += dt * animFreq;
+          const sw = Math.sin(rig.walkPhase) * 0.62;
           rig.leftLegPivot.rotation.x = sw;
           rig.rightLegPivot.rotation.x = -sw;
-          rig.leftArmPivot.rotation.x = -sw * 0.8;
-          rig.rightArmPivot.rotation.x = sw * 0.8;
+          rig.leftArmPivot.rotation.x = -sw * 0.85;
+          rig.rightArmPivot.rotation.x = sw * 0.85;
         } else {
-          rig.leftLegPivot.rotation.x = THREE.MathUtils.damp(rig.leftLegPivot.rotation.x, 0, 8, dt);
+          rig.leftLegPivot.rotation.x = THREE.MathUtils.damp(rig.leftLegPivot.rotation.x, 0, 10, dt);
           rig.rightLegPivot.rotation.x = THREE.MathUtils.damp(
             rig.rightLegPivot.rotation.x,
             0,
-            8,
+            10,
+            dt
+          );
+          rig.leftArmPivot.rotation.x = THREE.MathUtils.damp(rig.leftArmPivot.rotation.x, 0, 10, dt);
+          rig.rightArmPivot.rotation.x = THREE.MathUtils.damp(
+            rig.rightArmPivot.rotation.x,
+            0,
+            10,
             dt
           );
         }
 
-        const sig = `${rp.name}|${rp.studentClass}|${rp.score}|${isOnlineHuman}`;
+        const activePeerChat =
+          rp.lastChatText && rp.lastChatTime && nowMs - rp.lastChatTime < 9000
+            ? rp.lastChatText
+            : '';
+
+        const sig = `${rp.name}|${rp.studentClass}|${rp.score}|${isOnlineHuman}|${activePeerChat}`;
         if (rig.lastSignature !== sig) {
           rig.lastSignature = sig;
-          drawOverheadTag(rig.nameCanvas, rp.name, subLabel, badgeColor, false);
+          drawOverheadTag(rig.nameCanvas, rp.name, subLabel, badgeColor, false, activePeerChat);
           rig.nameTexture.needsUpdate = true;
         }
       }
@@ -1750,6 +1967,10 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
       renderer.domElement.removeEventListener('mousedown', handleMouseDown);
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
+      renderer.domElement.removeEventListener('touchstart', handleTouchStartCanvas);
+      window.removeEventListener('touchmove', handleTouchMoveCanvas);
+      window.removeEventListener('touchend', handleTouchEndCanvas);
+      window.removeEventListener('touchcancel', handleTouchEndCanvas);
       renderer.domElement.removeEventListener('wheel', handleWheel);
       renderer.domElement.removeEventListener('contextmenu', handleContextMenu);
       window.removeEventListener('resize', handleResize);
@@ -1759,22 +1980,133 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
     };
   }, []);
 
+  const MAX_JOYSTICK_RADIUS = 38;
+
+  const handleJoystickStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    e.stopPropagation();
+    const touch = e.changedTouches[0];
+    if (!touch) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    joystickTouchIdRef.current = touch.identifier;
+    joystickCenterRef.current = { x: cx, y: cy };
+
+    const dx = touch.clientX - cx;
+    const dy = touch.clientY - cy;
+    const dist = Math.hypot(dx, dy);
+    const clampedDist = Math.min(dist, MAX_JOYSTICK_RADIUS);
+    const angle = Math.atan2(dy, dx);
+    const kx = Math.cos(angle) * clampedDist;
+    const ky = Math.sin(angle) * clampedDist;
+    setJoystickKnob({ x: kx, y: ky });
+    touchStickRef.current = {
+      x: kx / MAX_JOYSTICK_RADIUS,
+      y: ky / MAX_JOYSTICK_RADIUS,
+    };
+  };
+
+  const handleJoystickMove = (e: React.TouchEvent<HTMLDivElement>) => {
+    e.stopPropagation();
+    if (joystickTouchIdRef.current === null) return;
+    for (let i = 0; i < e.changedTouches.length; i++) {
+      const t = e.changedTouches[i];
+      if (t.identifier === joystickTouchIdRef.current) {
+        const dx = t.clientX - joystickCenterRef.current.x;
+        const dy = t.clientY - joystickCenterRef.current.y;
+        const dist = Math.hypot(dx, dy);
+        const clampedDist = Math.min(dist, MAX_JOYSTICK_RADIUS);
+        const angle = Math.atan2(dy, dx);
+        const kx = Math.cos(angle) * clampedDist;
+        const ky = Math.sin(angle) * clampedDist;
+        setJoystickKnob({ x: kx, y: ky });
+        touchStickRef.current = {
+          x: kx / MAX_JOYSTICK_RADIUS,
+          y: ky / MAX_JOYSTICK_RADIUS,
+        };
+        break;
+      }
+    }
+  };
+
+  const handleJoystickEnd = (e: React.TouchEvent<HTMLDivElement>) => {
+    e.stopPropagation();
+    for (let i = 0; i < e.changedTouches.length; i++) {
+      if (e.changedTouches[i].identifier === joystickTouchIdRef.current) {
+        joystickTouchIdRef.current = null;
+        setJoystickKnob({ x: 0, y: 0 });
+        touchStickRef.current = { x: 0, y: 0 };
+        break;
+      }
+    }
+  };
+
   return (
-    <div className="fixed inset-0 w-screen h-screen overflow-hidden bg-slate-950">
-      <div ref={mountRef} className="w-full h-full" />
-      {/* GTA San Andreas Circular Radar Mini-Map in Bottom-Left */}
+    <div className="fixed inset-0 w-screen h-screen overflow-hidden bg-slate-950 touch-none">
+      <div ref={mountRef} className="w-full h-full touch-none" />
+
+      {/* Adaptive GTA San Andreas Circular Radar Mini-Map:
+          - Handphone (<640px): Compact 84x84px in top-right below status bar (keeps bottom-left clear for Virtual Joystick!)
+          - Desktop/Tablet (>=640px): 148x148px in bottom-left */}
       {joinedRoom && (
-        <div className="fixed bottom-5 left-5 z-20 pointer-events-none hidden sm:flex flex-col items-center gap-1">
+        <div className="fixed top-[60px] right-2.5 sm:top-auto sm:right-auto sm:bottom-5 sm:left-5 z-20 pointer-events-none flex flex-col items-center gap-1">
           <canvas
             ref={radarCanvasRef}
-            width={156}
-            height={156}
-            className="block rounded-full shadow-2xl"
+            width={148}
+            height={148}
+            className="block w-[82px] h-[82px] sm:w-[148px] sm:h-[148px] rounded-full shadow-2xl"
           />
-          <span className="text-[10px] font-mono text-slate-400 bg-slate-900/90 px-2.5 py-0.5 rounded border border-slate-800">
+          <span className="hidden sm:inline-block text-[10px] font-mono text-slate-400 bg-slate-900/90 px-2.5 py-0.5 rounded border border-slate-800">
             G: Pos Guru · ■: Barang · ●: Siswa
           </span>
         </div>
+      )}
+
+      {/* MOBILE / HANDPHONE VIRTUAL ANALOG JOYSTICK & JUMP/SPRINT PAD (Visible on Handphone & Tablet <1024px) */}
+      {joinedRoom && (
+        <>
+          {/* Left Thumb Virtual Analog Joystick */}
+          <div
+            onTouchStart={handleJoystickStart}
+            onTouchMove={handleJoystickMove}
+            onTouchEnd={handleJoystickEnd}
+            onTouchCancel={handleJoystickEnd}
+            className="fixed bottom-16 left-4 z-20 lg:hidden w-28 h-28 rounded-full bg-slate-900/80 border-2 border-slate-600/90 shadow-2xl flex items-center justify-center touch-none select-none"
+            aria-label="Joystick Virtual Jalan 3D"
+          >
+            <div className="w-20 h-20 rounded-full border border-slate-700/70 flex items-center justify-center pointer-events-none">
+              <span className="text-[9px] font-mono font-bold text-slate-500 uppercase">
+                JALAN
+              </span>
+            </div>
+            <div
+              className="absolute w-12 h-12 rounded-full bg-emerald-500/90 border-2 border-white shadow-lg pointer-events-none flex items-center justify-center"
+              style={{
+                transform: `translate(${joystickKnob.x}px, ${joystickKnob.y}px)`,
+              }}
+            >
+              <div className="w-3 h-3 rounded-full bg-white/90" />
+            </div>
+          </div>
+
+          {/* Right Thumb Jump & Dash Action Button */}
+          <div className="fixed bottom-20 right-4 z-20 lg:hidden flex flex-col items-center gap-2">
+            <button
+              type="button"
+              onTouchStart={(e) => {
+                e.stopPropagation();
+                mobileJumpQueuedRef.current = true;
+              }}
+              onClick={() => {
+                mobileJumpQueuedRef.current = true;
+              }}
+              className="w-16 h-16 rounded-full bg-sky-600/90 active:bg-sky-400 border-2 border-sky-300 shadow-2xl flex flex-col items-center justify-center text-white font-extrabold text-[10px] font-mono leading-tight touch-none select-none"
+            >
+              <span>LOMPAT</span>
+              <span className="text-[9px] text-sky-200">DASH</span>
+            </button>
+          </div>
+        </>
       )}
     </div>
   );

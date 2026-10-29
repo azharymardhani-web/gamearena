@@ -5,7 +5,6 @@ import {
   OptionKey,
   PlayerAnswerEvent,
 } from '../data/informaticsData';
-import { MapPlayerEntity } from './CyberArenaCanvas';
 import { soundEngine } from '../utils/soundEngine';
 import {
   Swords,
@@ -17,265 +16,369 @@ import {
   X,
   Lock,
   ArrowRight,
+  Clock,
+  ShieldCheck,
 } from 'lucide-react';
 
-interface VersusChallengeItem {
+export interface VersusChallengeItem {
   prompt: string;
   options: string[];
   correctIndex: number;
   topic: string;
 }
 
-const VERSUS_MINI_CHALLENGES: VersusChallengeItem[] = [
-  {
-    prompt: 'Konversi cepat bilangan biner 1010(2) ke desimal adalah...',
-    options: ['8', '10', '12', '14'],
-    correctIndex: 1,
-    topic: 'Sistem Bilangan Biner',
-  },
-  {
-    prompt: 'Gerbang logika AND menghasilkan output 1 jika kedua input bernilai...',
-    options: ['0 dan 0', '1 dan 0', '0 dan 1', '1 dan 1'],
-    correctIndex: 3,
-    topic: 'Gerbang Logika CPU',
-  },
-  {
-    prompt: 'Protokol web yang mengenkripsi paket data dengan SSL/TLS adalah...',
-    options: ['HTTP', 'FTP', 'HTTPS', 'TELNET'],
-    correctIndex: 2,
-    topic: 'Keamanan Jaringan',
-  },
-  {
-    prompt: 'Fungsi spreadsheet untuk mencari nilai rata-rata rentang sel adalah...',
-    options: ['=SUM()', '=AVERAGE()', '=COUNT()', '=MAX()'],
-    correctIndex: 1,
-    topic: 'Analisis Data',
-  },
-  {
-    prompt: 'Memecah masalah kompleks menjadi bagian lebih kecil disebut...',
-    options: ['Dekomposisi', 'Abstraksi', 'Enkripsi', 'Kompilasi'],
-    correctIndex: 0,
-    topic: 'Berpikir Komputasional',
-  },
-  {
-    prompt: 'Hasil operasi sisa bagi (Modulo) dari 14 % 4 adalah...',
-    options: ['1', '2', '3', '4'],
-    correctIndex: 1,
-    topic: 'Algoritma & Pemrograman',
-  },
-  {
-    prompt: 'Memori komputer yang datanya hilang saat listrik padam (Volatile) adalah...',
-    options: ['ROM', 'Harddisk', 'RAM', 'Flashdisk'],
-    correctIndex: 2,
-    topic: 'Sistem Komputer',
-  },
-];
+export interface VersusMatchStateClient {
+  id: string;
+  pin: string;
+  status: 'PENDING_CONSENT' | 'IN_PROGRESS' | 'FINISHED' | 'DECLINED' | 'CANCELLED';
+  challengerId: string;
+  challengerName: string;
+  challengerClass: string;
+  opponentId: string;
+  opponentName: string;
+  opponentClass: string;
+  isBotOpponent: boolean;
+  roundIdx: number;
+  questions: VersusChallengeItem[];
+  challengerScore: number;
+  opponentScore: number;
+  challengerAnsweredRound: number;
+  opponentAnsweredRound: number;
+  createdAt: number;
+  updatedAt: number;
+}
 
 interface VersusDuelModalProps {
-  isOpen: boolean;
-  opponent: MapPlayerEntity | null;
+  activeMatch: VersusMatchStateClient | null;
+  localPlayerId: string;
   localPlayerName: string;
-  onClose: () => void;
-  onCompleteVersus: (won: boolean, mpEarned: number, scoreEarned: number) => void;
+  onRespondConsent: (matchId: string, accept: boolean) => void;
+  onSubmitRoundAnswer: (
+    matchId: string,
+    roundIdx: number,
+    selectedIndex: number,
+    timeLeftSec: number
+  ) => void;
+  onCloseMatch: (matchId: string, won?: boolean, mpEarned?: number, scoreEarned?: number) => void;
 }
 
 export const VersusDuelModal: React.FC<VersusDuelModalProps> = ({
-  isOpen,
-  opponent,
+  activeMatch,
+  localPlayerId,
   localPlayerName,
-  onClose,
-  onCompleteVersus,
+  onRespondConsent,
+  onSubmitRoundAnswer,
+  onCloseMatch,
 }) => {
-  const [roundIdx, setRoundIdx] = useState(0);
-  const [myPoints, setMyPoints] = useState(0);
-  const [oppPoints, setOppPoints] = useState(0);
-  const [roundSet, setRoundSet] = useState<VersusChallengeItem[]>([]);
-  const [finished, setFinished] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(8);
+  const [timeLeft, setTimeLeft] = useState(10);
   const [lastFeedback, setLastFeedback] = useState<string | null>(null);
+  const [localAnsweredRound, setLocalAnsweredRound] = useState<number>(-1);
+
+  const roundIdx = activeMatch?.roundIdx ?? 0;
+  const matchStatus = activeMatch?.status;
 
   useEffect(() => {
-    if (isOpen && opponent) {
-      const shuffled = [...VERSUS_MINI_CHALLENGES]
-        .sort(() => Math.random() - 0.5)
-        .slice(0, 3);
-      setRoundSet(shuffled);
-      setRoundIdx(0);
-      setMyPoints(0);
-      setOppPoints(0);
-      setFinished(false);
-      setTimeLeft(8);
-      setLastFeedback(null);
+    setTimeLeft(10);
+    setLastFeedback(null);
+  }, [activeMatch?.id, roundIdx, matchStatus]);
+
+  useEffect(() => {
+    if (!activeMatch) {
+      setLocalAnsweredRound(-1);
     }
-  }, [isOpen, opponent]);
+  }, [activeMatch?.id]);
+
+  const isChallenger = activeMatch?.challengerId === localPlayerId;
+  const serverAnsweredRound = activeMatch
+    ? isChallenger
+      ? activeMatch.challengerAnsweredRound
+      : activeMatch.opponentAnsweredRound
+    : -1;
+  const hasAnsweredThisRound =
+    serverAnsweredRound >= roundIdx || localAnsweredRound >= roundIdx;
 
   useEffect(() => {
-    if (!isOpen || finished || roundSet.length === 0) return;
+    if (!activeMatch || activeMatch.status !== 'IN_PROGRESS' || hasAnsweredThisRound) return;
     const timer = setInterval(() => {
       setTimeLeft((prev) => {
         if (prev <= 1) {
-          handleSelectOption(-1);
-          return 8;
+          setLocalAnsweredRound(roundIdx);
+          onSubmitRoundAnswer(activeMatch.id, roundIdx, -1, 0);
+          return 10;
         }
         return prev - 1;
       });
     }, 1000);
     return () => clearInterval(timer);
-  });
+  }, [activeMatch, roundIdx, hasAnsweredThisRound, onSubmitRoundAnswer]);
 
-  if (!isOpen || !opponent || roundSet.length === 0) return null;
+  if (!activeMatch) return null;
 
-  const currentChallenge = roundSet[roundIdx] || roundSet[0];
+  const myScore = isChallenger ? activeMatch.challengerScore : activeMatch.opponentScore;
+  const oppScore = isChallenger ? activeMatch.opponentScore : activeMatch.challengerScore;
+  const oppName = isChallenger ? activeMatch.opponentName : activeMatch.challengerName;
+  const oppClass = isChallenger ? activeMatch.opponentClass : activeMatch.challengerClass;
+  const oppAnsweredRound = isChallenger
+    ? activeMatch.opponentAnsweredRound
+    : activeMatch.challengerAnsweredRound;
+  const oppHasAnsweredThisRound = oppAnsweredRound >= roundIdx;
+
+  const currentChallenge =
+    activeMatch.questions[roundIdx] || activeMatch.questions[0] || {
+      prompt: 'Konversi biner 1010(2) ke desimal adalah...',
+      options: ['8', '10', '12', '14'],
+      correctIndex: 1,
+      topic: 'Sistem Bilangan Biner',
+    };
 
   const handleSelectOption = (idx: number) => {
-    if (finished) return;
+    if (activeMatch.status !== 'IN_PROGRESS' || hasAnsweredThisRound) return;
+    setLocalAnsweredRound(roundIdx);
     const isCorrect = idx === currentChallenge.correctIndex;
     const myGain = isCorrect ? 100 + timeLeft * 10 : 0;
-    // Opponent simulated reflex score
-    const oppCorrect = Math.random() < 0.65;
-    const oppGain = oppCorrect ? 95 : 0;
-
-    const nextMy = myPoints + myGain;
-    const nextOpp = oppPoints + oppGain;
-    setMyPoints(nextMy);
-    setOppPoints(nextOpp);
 
     if (isCorrect) {
       soundEngine.playCorrectAnswer();
-      setLastFeedback(`TEPAT! +${myGain} Poin Duel`);
+      setLastFeedback(`✓ TEPAT! +${myGain} Poin Duel Realtime`);
     } else {
       soundEngine.playWrongAnswer();
-      setLastFeedback(`Kurang Tepat! Jawaban: ${currentChallenge.options[currentChallenge.correctIndex]}`);
+      setLastFeedback(
+        `✕ Kurang Tepat! Kunci: ${currentChallenge.options[currentChallenge.correctIndex]}`
+      );
     }
 
-    if (roundIdx + 1 < roundSet.length) {
-      setTimeout(() => {
-        setRoundIdx((r) => r + 1);
-        setTimeLeft(8);
-        setLastFeedback(null);
-      }, 650);
-    } else {
-      setTimeout(() => {
-        setFinished(true);
-        const won = nextMy >= nextOpp;
-        if (won) soundEngine.playVictoryFanfare();
-      }, 650);
-    }
+    onSubmitRoundAnswer(activeMatch.id, roundIdx, idx, timeLeft);
   };
 
-  const wonDuel = myPoints >= oppPoints;
-  const rewardMp = wonDuel ? 100 : 40;
-  const rewardScore = wonDuel ? 150 : 50;
+  const wonDuel = myScore >= oppScore;
+  const rewardMp = wonDuel ? 100 : 45;
+  const rewardScore = wonDuel ? 150 : 60;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 p-4">
-      <div className="w-full max-w-xl bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 p-3 sm:p-4">
+      <div className="w-full max-w-xl bg-slate-900 border-2 border-slate-700 rounded-2xl shadow-2xl overflow-hidden">
         {/* Versus Header */}
-        <div className="flex items-center justify-between px-6 py-4 bg-slate-950 border-b border-slate-800">
+        <div className="flex items-center justify-between px-4 sm:px-6 py-3.5 bg-slate-950 border-b border-slate-800">
           <div className="flex items-center gap-2.5">
-            <Swords className="w-5 h-5 text-amber-400" />
+            <Swords className="w-5 h-5 text-rose-400 shrink-0" />
             <div>
-              <h2 className="text-lg font-extrabold text-slate-100 font-display">
-                DUEL VERSUS ANTAR SISWA (1v1)
+              <h2 className="text-sm sm:text-lg font-extrabold text-slate-100 font-display">
+                DUEL VERSUS REAL-TIME (1v1) · MTsN 14 HALIM
               </h2>
-              <p className="text-xs text-slate-400">
-                Menangkan duel cepat untuk meraih Poin Misi (MP) pembuka soal Guru!
+              <p className="text-[11px] text-slate-400">
+                Persetujuan kedua belah pihak · Soal & skor tersinkronisasi secara realtime
               </p>
             </div>
           </div>
           <button
-            onClick={onClose}
+            onClick={() => onCloseMatch(activeMatch.id)}
             className="p-1.5 text-slate-400 hover:text-slate-200 bg-slate-800 rounded-lg"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Scoreboard Bar */}
-        <div className="grid grid-cols-3 items-center px-6 py-3.5 bg-slate-950/60 border-b border-slate-800 text-center">
-          <div className="text-left">
-            <div className="text-xs font-bold text-sky-400 truncate">{localPlayerName}</div>
-            <div className="text-2xl font-extrabold font-mono text-slate-100 tabular-nums">
-              {myPoints}
+        {/* STATE 1: PENDING MUTUAL CONSENT */}
+        {activeMatch.status === 'PENDING_CONSENT' && (
+          <div className="p-6 text-center space-y-4">
+            <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-rose-500/15 border border-rose-500/40 text-rose-400">
+              <Swords className="w-7 h-7" />
             </div>
-          </div>
-
-          <div className="text-xs font-mono font-bold text-amber-400">
-            {finished ? 'HASIL AKHIR' : `RONDE ${roundIdx + 1}/3 · ${timeLeft}d`}
-          </div>
-
-          <div className="text-right">
-            <div className="text-xs font-bold text-rose-400 truncate">
-              {opponent.name} ({opponent.studentClass})
-            </div>
-            <div className="text-2xl font-extrabold font-mono text-slate-100 tabular-nums">
-              {oppPoints}
-            </div>
-          </div>
-        </div>
-
-        {/* Body */}
-        <div className="p-6 space-y-5">
-          {!finished ? (
-            <>
-              <div className="space-y-1.5">
-                <span className="text-xs font-mono text-sky-400">
-                  Topik Cepat: {currentChallenge.topic}
-                </span>
-                <p className="text-base font-bold text-slate-100 leading-snug">
-                  {currentChallenge.prompt}
+            {isChallenger ? (
+              <>
+                <h3 className="text-lg sm:text-xl font-extrabold text-slate-100 font-display">
+                  Menunggu Persetujuan dari {oppName} ({oppClass})...
+                </h3>
+                <p className="text-xs text-slate-300 max-w-md mx-auto leading-relaxed">
+                  Undangan duel 1v1 telah dikirim ke layar <strong>{oppName}</strong> secara
+                  realtime. Duel akan langsung dimulai begitu temanmu menekan tombol{' '}
+                  <strong className="text-emerald-400">Terima Duel</strong>.
                 </p>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                {currentChallenge.options.map((opt, idx) => (
+                <button
+                  onClick={() => {
+                    onRespondConsent(activeMatch.id, false);
+                    onCloseMatch(activeMatch.id);
+                  }}
+                  className="px-5 py-2.5 text-xs font-bold text-slate-200 bg-slate-800 hover:bg-rose-900/80 border border-slate-700 rounded-xl transition-colors"
+                >
+                  Batalkan Tantangan Duel
+                </button>
+              </>
+            ) : (
+              <>
+                <h3 className="text-lg sm:text-xl font-extrabold text-slate-100 font-display">
+                  {oppName} ({oppClass}) Mengajak Kamu Duel Versus 1v1!
+                </h3>
+                <p className="text-xs text-slate-300 max-w-md mx-auto leading-relaxed">
+                  Terima tantangan duel cepat 3 soal Informatika untuk memperebutkan{' '}
+                  <strong className="text-emerald-400">+100 Poin Misi (MP)</strong> dan{' '}
+                  <strong className="text-sky-400">+150 Skor Respect</strong>!
+                </p>
+                <div className="flex items-center justify-center gap-3 pt-2">
                   <button
-                    key={idx}
-                    onClick={() => handleSelectOption(idx)}
-                    className="p-3.5 text-left text-xs font-semibold text-slate-100 bg-slate-950 hover:bg-sky-950/60 border border-slate-800 hover:border-sky-500 rounded-xl transition-colors"
+                    onClick={() => {
+                      soundEngine.playDash();
+                      onRespondConsent(activeMatch.id, true);
+                    }}
+                    className="px-6 py-3 text-xs font-extrabold text-slate-950 bg-emerald-400 hover:bg-emerald-300 rounded-xl shadow-lg transition-colors"
                   >
-                    <span className="font-mono font-bold text-sky-400 mr-2">
-                      [{idx + 1}]
-                    </span>
-                    {opt}
+                    ✓ Setuju & Mulai Duel Sekarang
                   </button>
-                ))}
+                  <button
+                    onClick={() => {
+                      onRespondConsent(activeMatch.id, false);
+                      onCloseMatch(activeMatch.id);
+                    }}
+                    className="px-5 py-3 text-xs font-bold text-slate-300 bg-slate-800 hover:bg-rose-900 border border-slate-700 rounded-xl transition-colors"
+                  >
+                    ✕ Tolak
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* STATE 2: DECLINED */}
+        {activeMatch.status === 'DECLINED' && (
+          <div className="p-6 text-center space-y-4">
+            <h3 className="text-lg font-extrabold text-rose-400">
+              Tantangan Duel Ditolak / Dibatalkan
+            </h3>
+            <p className="text-xs text-slate-300">
+              Duel Versus dibatalkan karena salah satu pihak belum siap. Silakan cari teman lain di
+              arena MTsN 14 Halim!
+            </p>
+            <button
+              onClick={() => onCloseMatch(activeMatch.id)}
+              className="px-5 py-2.5 text-xs font-bold text-white bg-slate-800 hover:bg-slate-700 rounded-xl"
+            >
+              Kembali ke Map 3D
+            </button>
+          </div>
+        )}
+
+        {/* STATE 3: IN_PROGRESS OR FINISHED */}
+        {(activeMatch.status === 'IN_PROGRESS' || activeMatch.status === 'FINISHED') && (
+          <>
+            {/* Live Real-Time Scoreboard Bar */}
+            <div className="grid grid-cols-3 items-center px-4 sm:px-6 py-3 bg-slate-950/70 border-b border-slate-800 text-center">
+              <div className="text-left min-w-0">
+                <div className="text-xs font-bold text-sky-400 truncate">
+                  {localPlayerName} (Kamu)
+                </div>
+                <div className="text-xl sm:text-2xl font-extrabold font-mono text-slate-100 tabular-nums">
+                  {myScore}
+                </div>
+                {activeMatch.status === 'IN_PROGRESS' && (
+                  <div className="text-[10px] font-mono text-emerald-400">
+                    {hasAnsweredThisRound ? '✓ Sudah Jawab' : '● Menjawab...'}
+                  </div>
+                )}
               </div>
 
-              {lastFeedback && (
-                <div className="text-center text-xs font-bold text-amber-300 pt-1">
-                  {lastFeedback}
+              <div className="flex flex-col items-center justify-center">
+                <span className="text-xs font-mono font-extrabold text-amber-400">
+                  {activeMatch.status === 'FINISHED'
+                    ? 'HASIL AKHIR'
+                    : `RONDE ${roundIdx + 1}/3 · ${timeLeft}d`}
+                </span>
+                <span className="text-[10px] font-mono text-slate-400 flex items-center gap-1 mt-0.5">
+                  <ShieldCheck className="w-3 h-3 text-emerald-400" /> Live Sync
+                </span>
+              </div>
+
+              <div className="text-right min-w-0">
+                <div className="text-xs font-bold text-rose-400 truncate">
+                  {oppName} ({oppClass})
+                </div>
+                <div className="text-xl sm:text-2xl font-extrabold font-mono text-slate-100 tabular-nums">
+                  {oppScore}
+                </div>
+                {activeMatch.status === 'IN_PROGRESS' && (
+                  <div className="text-[10px] font-mono text-amber-300">
+                    {oppHasAnsweredThisRound ? '✓ Sudah Jawab' : '● Berpikir...'}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Body */}
+            <div className="p-4 sm:p-6 space-y-4">
+              {activeMatch.status === 'IN_PROGRESS' ? (
+                <>
+                  <div className="space-y-1.5">
+                    <span className="text-xs font-mono text-sky-400">
+                      Topik Cepat: {currentChallenge.topic}
+                    </span>
+                    <p className="text-sm sm:text-base font-bold text-slate-100 leading-snug">
+                      {currentChallenge.prompt}
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {currentChallenge.options.map((opt, idx) => (
+                      <button
+                        key={idx}
+                        disabled={hasAnsweredThisRound}
+                        onClick={() => handleSelectOption(idx)}
+                        className="p-3.5 text-left text-xs font-semibold text-slate-100 bg-slate-950 hover:bg-sky-950/60 disabled:opacity-60 border border-slate-800 hover:border-sky-500 rounded-xl transition-colors"
+                      >
+                        <span className="font-mono font-bold text-sky-400 mr-2">
+                          [{idx + 1}]
+                        </span>
+                        {opt}
+                      </button>
+                    ))}
+                  </div>
+
+                  {lastFeedback && (
+                    <div className="text-center text-xs font-bold text-amber-300 pt-1">
+                      {lastFeedback}
+                    </div>
+                  )}
+
+                  {hasAnsweredThisRound && !oppHasAnsweredThisRound && (
+                    <div className="p-3 bg-slate-950 border border-amber-500/50 rounded-xl flex items-center justify-center gap-2 text-xs text-amber-300 font-semibold">
+                      <Clock className="w-4 h-4 shrink-0" />
+                      <span>Menunggu {oppName} menjawab soal ronde ini secara realtime...</span>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="text-center space-y-4 py-2">
+                  <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-amber-500/15 border border-amber-500/40 text-amber-400">
+                    <Sparkles className="w-7 h-7" />
+                  </div>
+                  <h3 className="text-xl sm:text-2xl font-extrabold text-slate-100 font-display">
+                    {wonDuel
+                      ? `KEMENANGAN DUEL ATAS ${oppName.toUpperCase()}!`
+                      : `DUEL SELESAI MELAWAN ${oppName.toUpperCase()}!`}
+                  </h3>
+                  <p className="text-xs text-slate-300 max-w-md mx-auto leading-relaxed">
+                    Skor Akhir Realtime: <strong>{myScore}</strong> vs <strong>{oppScore}</strong>.
+                    Kamu memperoleh{' '}
+                    <strong className="text-emerald-400 font-mono">
+                      +{rewardMp} Poin Misi (MP)
+                    </strong>{' '}
+                    dan{' '}
+                    <strong className="text-sky-400 font-mono">+{rewardScore} Skor Respect</strong>!
+                  </p>
+
+                  <button
+                    onClick={() => {
+                      soundEngine.playVictoryFanfare();
+                      onCloseMatch(activeMatch.id, wonDuel, rewardMp, rewardScore);
+                    }}
+                    className="w-full py-3 px-6 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 rounded-xl transition-colors"
+                  >
+                    Klaim +{rewardMp} Poin Misi & Kembali ke Arena MTsN 14
+                  </button>
                 </div>
               )}
-            </>
-          ) : (
-            <div className="text-center space-y-4 py-2">
-              <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-amber-500/15 border border-amber-500/40 text-amber-400">
-                <Sparkles className="w-7 h-7" />
-              </div>
-              <h3 className="text-2xl font-extrabold text-slate-100 font-display">
-                {wonDuel ? 'KEMENANGAN VERSUS! +RESPECT' : 'DUEL SELESAI! TETAP SEMANGAT'}
-              </h3>
-              <p className="text-xs text-slate-300 max-w-md mx-auto leading-relaxed">
-                Kamu memperoleh tambahan{' '}
-                <strong className="text-emerald-400 font-mono">+{rewardMp} Poin Misi (MP)</strong>{' '}
-                dan <strong className="text-sky-400 font-mono">+{rewardScore} Skor Respect</strong>!
-                Gunakan Poin Misi tersebut untuk menemui <strong>Pak Azhary Mardhani, S.Kom</strong>{' '}
-                di map dan menjawab soal ujian!
-              </p>
-
-              <button
-                onClick={() => {
-                  onCompleteVersus(wonDuel, rewardMp, rewardScore);
-                  onClose();
-                }}
-                className="w-full py-3 px-6 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 rounded-xl transition-colors"
-              >
-                Klaim +{rewardMp} Poin Misi & Kembali ke Map 3D
-              </button>
             </div>
-          )}
-        </div>
+          </>
+        )}
       </div>
     </div>
   );
