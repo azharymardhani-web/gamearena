@@ -559,20 +559,20 @@ export const BuildingInteriorModal: React.FC<BuildingInteriorModalProps> = ({
           </div>
 
           {/* Pos Misi Guru Banner inside the Building */}
-          <div className="p-5 rounded-2xl bg-gradient-to-r from-amber-500/15 via-slate-900 to-amber-950/20 border border-amber-500/30 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="p-5 rounded-2xl bg-gradient-to-r from-emerald-900/40 via-slate-900 to-amber-950/30 border border-amber-500/40 flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-4">
               <div className="p-3 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/30 text-2xl font-bold">
-                👨‍🏫
+                🖥️
               </div>
               <div>
                 <span className="text-[10px] font-mono font-extrabold uppercase tracking-wider text-amber-400">
-                  POS SOAL & ASESMEN GURU INFORMATIKA
+                  TERMINAL CBT ASESMEN MANDIRI INFORMATIKA
                 </span>
                 <h4 className="text-base font-bold text-white">
-                  Pos Misi: {building.title}
+                  Lembar Ujian CBT: {building.title}
                 </h4>
                 <p className="text-xs text-slate-300 mt-0.5">
-                  Kerjakan bank soal kuis Kurikulum Merdeka dari Pak Azhary Mardhani, S.Kom untuk mengumpulkan MP & Skor!
+                  Kerjakan soal Computer-Based Test (CBT) Kurikulum Merdeka dari Pak Azhary Mardhani, S.Kom untuk menguji kemampuanmu secara mandiri!
                 </p>
               </div>
             </div>
@@ -583,9 +583,9 @@ export const BuildingInteriorModal: React.FC<BuildingInteriorModalProps> = ({
                 onClose();
                 onStartTeacherQuiz();
               }}
-              className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs font-mono tracking-wider uppercase transition-all shadow-lg shadow-amber-950/50 flex items-center gap-2 shrink-0"
+              className="px-5 py-3 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs font-mono tracking-wider uppercase transition-all shadow-lg shadow-amber-950/50 flex items-center gap-2 shrink-0 border-2 border-amber-200"
             >
-              <span>KERJAKAN MISION SOAL</span>
+              <span>BUKA LEMBAR UJIAN CBT</span>
               <Sparkles className="w-4 h-4" />
             </button>
           </div>

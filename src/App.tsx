@@ -2929,7 +2929,7 @@ export default function App() {
       />
 
       {/* ====================================================================
-          6. LAPORAN ANALISIS BUTIR SOAL PSIKOMETRIK (POST-GAME / TEACHER VIEW)
+          6. LAPORAN ANALISIS KEMAMPUAN SISWA CBT (POST-GAME / TEACHER VIEW)
          ==================================================================== */}
       {(roomStatus === 'FINISHED' || isAnalysisPreviewOpen) && (
         <ItemAnalysisView
@@ -2938,6 +2938,9 @@ export default function App() {
           sessionAnswers={sessionAnswers}
           players={classPlayers}
           isTeacherHost={localRole === 'TEACHER'}
+          localPlayerId={localPlayerIdRef.current}
+          localPlayerName={studentName || 'Siswa MTsN 14'}
+          localPlayerClass={studentClass || 'Kelas 7'}
           onPlayAgain={() => {
             setIsAnalysisPreviewOpen(false);
             setRoomStatus('PLAYING');
