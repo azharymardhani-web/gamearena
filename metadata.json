@@ -1,0 +1,6 @@
+{
+  "name": "Siber Arena 14 — Game Edukasi Informatika MTsN 14 Jakarta",
+  "description": "Game edukasi multipemain Informatika interaktif dengan fitur tambah materi pembelajaran dan analisis butir soal otomatis oleh Azhary Mardhani, S.Kom (MTs Negeri 14 Jakarta).",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
