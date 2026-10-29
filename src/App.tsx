@@ -88,7 +88,9 @@ interface SavedRealtimeSession {
   savedAt: number;
 }
 
-const SESSION_STORAGE_KEY = 'mtsn14_halim_realtime_session_v2';
+const TAB_PLAYER_ID_KEY = 'mtsn14_tab_player_id_v3';
+const TAB_SESSION_STORAGE_KEY = 'mtsn14_halim_tab_session_v3';
+const BACKUP_SESSION_STORAGE_KEY = 'mtsn14_halim_backup_session_v3';
 
 const QUICK_CHAT_PHRASES = [
   'Halo semua! 👋',
@@ -105,13 +107,59 @@ function normalizePin(raw: string): string {
   return cleaned || 'MTN14';
 }
 
+function getOrCreateTabPlayerId(): string {
+  try {
+    const existing = sessionStorage.getItem(TAB_PLAYER_ID_KEY);
+    if (existing && existing.startsWith('p-')) return existing;
+    const created = `p-${Date.now().toString(36).slice(-4)}-${Math.random()
+      .toString(36)
+      .slice(2, 7)}`;
+    sessionStorage.setItem(TAB_PLAYER_ID_KEY, created);
+    return created;
+  } catch {
+    return `p-${Math.random().toString(36).slice(2, 9)}`;
+  }
+}
+
+function getInitialSpawnForPlayer(playerId: string): { x: number; y: number } {
+  let seed = 0;
+  for (let i = 0; i < playerId.length; i++) {
+    seed = (seed * 31 + playerId.charCodeAt(i)) % 360;
+  }
+  const rad = (seed * Math.PI) / 180;
+  return {
+    x: Math.round(1200 + Math.cos(rad) * 52),
+    y: Math.round(780 + Math.sin(rad) * 34),
+  };
+}
+
 function loadSavedSession(): SavedRealtimeSession | null {
   try {
-    const raw = localStorage.getItem(SESSION_STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as SavedRealtimeSession;
-    if (!parsed || !parsed.playerId) return null;
-    return parsed;
+    const tabId = getOrCreateTabPlayerId();
+    // 1. Check current tab's session first (preserves active tab across F5 refresh without colliding across multiple open tabs)
+    const tabRaw = sessionStorage.getItem(TAB_SESSION_STORAGE_KEY);
+    if (tabRaw) {
+      const parsed = JSON.parse(tabRaw) as SavedRealtimeSession;
+      if (parsed && parsed.studentName) {
+        return { ...parsed, playerId: tabId };
+      }
+    }
+    // 2. If this is a newly opened tab, check localStorage backup for pre-filling form fields (with joinedRoom: false so multiple tabs don't collide!)
+    const backupRaw = localStorage.getItem(BACKUP_SESSION_STORAGE_KEY);
+    if (backupRaw) {
+      const parsedBackup = JSON.parse(backupRaw) as SavedRealtimeSession;
+      if (parsedBackup) {
+        const spawn = getInitialSpawnForPlayer(tabId);
+        return {
+          ...parsedBackup,
+          playerId: tabId,
+          joinedRoom: false,
+          x: spawn.x,
+          y: spawn.y,
+        };
+      }
+    }
+    return null;
   } catch {
     return null;
   }
@@ -283,16 +331,23 @@ export default function App() {
   const [isMaterialModalOpen, setIsMaterialModalOpen] = useState<boolean>(false);
   const [isAnalysisPreviewOpen, setIsAnalysisPreviewOpen] = useState<boolean>(false);
   const [isMuted, setIsMuted] = useState<boolean>(false);
+  const initialTabPlayerId = useMemo(
+    () => initialSession?.playerId || getOrCreateTabPlayerId(),
+    [initialSession]
+  );
+  const initialSpawn = useMemo(
+    () => getInitialSpawnForPlayer(initialTabPlayerId),
+    [initialTabPlayerId]
+  );
+
   const [localHud, setLocalHud] = useState<{ x: number; y: number; hp: number }>({
-    x: initialSession?.x ?? 1200,
-    y: initialSession?.y ?? 780,
+    x: initialSession?.x ?? initialSpawn.x,
+    y: initialSession?.y ?? initialSpawn.y,
     hp: 100,
   });
 
   const wsRef = useRef<WebSocket | null>(null);
-  const localPlayerIdRef = useRef<string>(
-    initialSession?.playerId || `p-${Math.random().toString(36).slice(2, 9)}`
-  );
+  const localPlayerIdRef = useRef<string>(initialTabPlayerId);
   const latestPosRef = useRef<{
     x: number;
     y: number;
@@ -301,8 +356,8 @@ export default function App() {
     facingAngle: number;
     jumpY: number;
   }>({
-    x: initialSession?.x ?? 1200,
-    y: initialSession?.y ?? 780,
+    x: initialSession?.x ?? initialSpawn.x,
+    y: initialSession?.y ?? initialSpawn.y,
     vx: 0,
     vy: 0,
     facingAngle: Math.PI,
@@ -346,7 +401,11 @@ export default function App() {
           answeredQuestionIds: Array.from(answeredQuestionIds),
           savedAt: Date.now(),
         };
-        localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(snapshot));
+        const serialized = JSON.stringify(snapshot);
+        sessionStorage.setItem(TAB_SESSION_STORAGE_KEY, serialized);
+        if (snapshot.studentName) {
+          localStorage.setItem(BACKUP_SESSION_STORAGE_KEY, serialized);
+        }
         const now = new Date();
         setLastAutoSaveTime(
           `${now.getHours().toString().padStart(2, '0')}:${now
@@ -779,7 +838,7 @@ export default function App() {
     };
 
     syncNow();
-    const interval = setInterval(syncNow, 450);
+    const interval = setInterval(syncNow, 350);
     return () => clearInterval(interval);
   }, [
     joinedRoom,
@@ -917,7 +976,7 @@ export default function App() {
       selectedPresetId,
       avatarColor,
       selectedCategory,
-      true
+      false
     );
   };
 
@@ -938,18 +997,29 @@ export default function App() {
       'cj_rizky',
       '#f59e0b',
       selectedCategory,
-      true
+      false
     );
   };
 
   const handleResetSavedSession = () => {
     try {
-      localStorage.removeItem(SESSION_STORAGE_KEY);
+      sessionStorage.removeItem(TAB_SESSION_STORAGE_KEY);
+      sessionStorage.removeItem(TAB_PLAYER_ID_KEY);
+      localStorage.removeItem(BACKUP_SESSION_STORAGE_KEY);
     } catch {
       // ignore
     }
-    localPlayerIdRef.current = `p-${Math.random().toString(36).slice(2, 9)}`;
-    latestPosRef.current = { x: 1200, y: 780, vx: 0, vy: 0, facingAngle: Math.PI, jumpY: 0 };
+    const freshId = getOrCreateTabPlayerId();
+    const freshSpawn = getInitialSpawnForPlayer(freshId);
+    localPlayerIdRef.current = freshId;
+    latestPosRef.current = {
+      x: freshSpawn.x,
+      y: freshSpawn.y,
+      vx: 0,
+      vy: 0,
+      facingAngle: Math.PI,
+      jumpY: 0,
+    };
     setStudentName('');
     setLocalScore(0);
     setMissionPoints(100);

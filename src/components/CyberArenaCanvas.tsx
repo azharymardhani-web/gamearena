@@ -640,7 +640,7 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
     ): HumanoidRig => {
       const root = new THREE.Group();
 
-      // 1. Contact Shadow Disc flush at y = 0.03
+      // 1. Contact Shadow Disc + Glowing 3D Player Ring flush at y = 0.03..0.05
       const shadowDisc = new THREE.Mesh(
         new THREE.PlaneGeometry(3.2, 3.2),
         new THREE.MeshBasicMaterial({
@@ -653,6 +653,22 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
       shadowDisc.rotation.x = -Math.PI / 2;
       shadowDisc.position.y = 0.03;
       root.add(shadowDisc);
+
+      if (!isTeacherNpc) {
+        const playerRing = new THREE.Mesh(
+          new THREE.RingGeometry(1.45, 1.85, 28),
+          new THREE.MeshBasicMaterial({
+            color: new THREE.Color(badgeColor),
+            side: THREE.DoubleSide,
+            transparent: true,
+            opacity: 0.85,
+            depthWrite: false,
+          })
+        );
+        playerRing.rotation.x = -Math.PI / 2;
+        playerRing.position.y = 0.05;
+        root.add(playerRing);
+      }
 
       const skinMat = new THREE.MeshStandardMaterial({
         color: new THREE.Color(preset.skinColor),
@@ -1246,8 +1262,17 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
     let lastMouseX = 0;
     let lastMouseY = 0;
 
-    let localMapX = WORLD_WIDTH / 2;
-    let localMapY = WORLD_HEIGHT / 2 + 30;
+    let seedHash = 0;
+    const initPid = propsRef.current.localPlayerId || 'p0';
+    for (let i = 0; i < initPid.length; i++) {
+      seedHash = (seedHash * 31 + initPid.charCodeAt(i)) % 360;
+    }
+    const initAngle = (seedHash * Math.PI) / 180;
+    const defaultSpawnX = Math.round(WORLD_WIDTH / 2 + Math.cos(initAngle) * 52);
+    const defaultSpawnY = Math.round(WORLD_HEIGHT / 2 + 30 + Math.sin(initAngle) * 34);
+
+    let localMapX = propsRef.current.teleportCommand?.x ?? defaultSpawnX;
+    let localMapY = propsRef.current.teleportCommand?.y ?? defaultSpawnY;
     let localJumpY = 0;
     let localJumpVy = 0;
     let localDashTimer = 0;
@@ -1256,7 +1281,7 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
     let localWalkPhase = 0;
     let lastNearbyTeacherIdx: number | null = null;
     let lastNearbyVersusId: string | null = null;
-    let lastTeleportSeq = 0;
+    let lastTeleportSeq = propsRef.current.teleportCommand?.seq || 0;
     let wsEmitCooldown = 0;
     let hudSyncCooldown = 0;
 
@@ -1895,12 +1920,33 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
             rCtx.fillText('G', gx, gy + 3);
           }
 
-          // 3. Cyan/Emerald Blips for Real Online Classmates & Red Blips for NPC Students
+          // 3. Cyan/Emerald Blips + Direction Vectors for Real Online Classmates & Red Blips for NPC Students
           for (const rp of currentProps.players) {
             if (rp.id === currentProps.localPlayerId) continue;
-            const px = cx + (rp.x - localMapX) * scaleMap;
-            const py = cy + (rp.y - localMapY) * scaleMap;
+            const rawDx = (rp.x - localMapX) * scaleMap;
+            const rawDy = (rp.y - localMapY) * scaleMap;
+            const distFromCenter = Math.hypot(rawDx, rawDy);
+            const maxBlipRadius = radius - 8;
+            const clampedRatio =
+              distFromCenter > maxBlipRadius && distFromCenter > 0
+                ? maxBlipRadius / distFromCenter
+                : 1;
+            const px = cx + rawDx * clampedRatio;
+            const py = cy + rawDy * clampedRatio;
             const isOnlineHuman = !rp.isRoamingPeer;
+
+            if (isOnlineHuman) {
+              rCtx.save();
+              rCtx.strokeStyle = 'rgba(56, 189, 248, 0.55)';
+              rCtx.lineWidth = 1.25;
+              rCtx.setLineDash([3, 3]);
+              rCtx.beginPath();
+              rCtx.moveTo(cx, cy);
+              rCtx.lineTo(px, py);
+              rCtx.stroke();
+              rCtx.restore();
+            }
+
             rCtx.fillStyle = isOnlineHuman ? '#38bdf8' : '#f43f5e';
             rCtx.beginPath();
             rCtx.arc(px, py, isOnlineHuman ? 6.5 : 4.5, 0, Math.PI * 2);

@@ -81,23 +81,6 @@ export interface VersusMatchState {
   updatedAt: number;
 }
 
-export interface ClassroomRoom {
-  pin: string;
-  roomName: string;
-  teacherName: string;
-  hostId: string;
-  status: 'LOBBY' | 'PLAYING' | 'ROUND_RESULT' | 'FINISHED';
-  categoryFilter: string;
-  currentQuestionIndex: number;
-  questionStartTime: number;
-  timeLeftSec: number;
-  players: Map<string, ClassMapPlayer>;
-  answers: PlayerAnswerEvent[];
-  activeQuestionIds: string[];
-  chatMessages: RoomChatMessage[];
-  versusMatches: Map<string, VersusMatchState>;
-}
-
 export const MAP_WIDTH = 2400;
 export const MAP_HEIGHT = 1500;
 export const SPAWN_CENTER_X = 1200;
@@ -166,10 +149,32 @@ function pickVersusQuestions(): VersusQuestionItem[] {
   return [...VERSUS_CHALLENGE_POOL].sort(() => Math.random() - 0.5).slice(0, 3);
 }
 
+// ============================================================================
+// SINGLE UNIFIED SHARED ARENA STATE (100% OF STUDENTS MEET ON 1 ARENA)
+// ============================================================================
 let materialsStore: InformaticsMaterial[] = [...INITIAL_MATERIALS];
 let questionsStore: InformaticsQuestion[] = [...INITIAL_QUESTIONS];
 let globalAnswerHistory: PlayerAnswerEvent[] = [];
-const rooms = new Map<string, ClassroomRoom>();
+
+let arenaPin = 'MTN14';
+let arenaRoomName = 'Kampus MTsN 14 Halim Jakarta Timur';
+let arenaTeacherName = 'Azhary Mardhani, S.Kom';
+let arenaStatus: 'LOBBY' | 'PLAYING' | 'ROUND_RESULT' | 'FINISHED' = 'PLAYING';
+let arenaCategoryFilter = 'Semua Materi';
+const arenaPlayers = new Map<string, ClassMapPlayer>();
+let arenaChatMessages: RoomChatMessage[] = [
+  {
+    id: 'welcome-msg',
+    senderId: 'teacher-system',
+    senderName: 'Pak Azhary Mardhani, S.Kom',
+    senderClass: 'Guru Informatika',
+    senderRole: 'TEACHER',
+    senderColor: '#f59e0b',
+    text: 'Selamat datang di Open-World 3D MTsN 14 Halim! Semua siswa otomatis berkumpul di 1 arena yang sama di Lapangan Upacara!',
+    timestamp: Date.now(),
+  },
+];
+const arenaVersusMatches = new Map<string, VersusMatchState>();
 
 export function normalizeRoomPin(raw: unknown): string {
   const cleaned = String(raw || '')
@@ -178,7 +183,6 @@ export function normalizeRoomPin(raw: unknown): string {
   return cleaned || 'MTN14';
 }
 
-// Seed 2 clearly labeled training bots so solo practice is always available, while real students are front and center
 const ROAMING_PEERS_TEMPLATE: Array<{
   id: string;
   name: string;
@@ -196,10 +200,10 @@ const ROAMING_PEERS_TEMPLATE: Array<{
     studentClass: 'Bot Kelas 8A',
     characterPreset: 'bima_rider',
     color: '#f59e0b',
-    x: 880,
-    y: 590,
-    vx: 48,
-    vy: 26,
+    x: 920,
+    y: 640,
+    vx: 45,
+    vy: 25,
   },
   {
     id: 'peer-nabila',
@@ -207,134 +211,17 @@ const ROAMING_PEERS_TEMPLATE: Array<{
     studentClass: 'Bot Kelas 8B',
     characterPreset: 'nadia_tech',
     color: '#0ea5e9',
-    x: 1520,
-    y: 930,
-    vx: -46,
-    vy: -28,
+    x: 1480,
+    y: 920,
+    vx: -45,
+    vy: -25,
   },
 ];
 
-let saveTimeout: ReturnType<typeof setTimeout> | null = null;
-
-function schedulePersistStateToDisk() {
-  if (saveTimeout) return;
-  saveTimeout = setTimeout(() => {
-    saveTimeout = null;
-    try {
-      const serializedRooms = Array.from(rooms.values()).map((r) => ({
-        pin: r.pin,
-        roomName: r.roomName,
-        teacherName: r.teacherName,
-        hostId: r.hostId,
-        status: r.status,
-        categoryFilter: r.categoryFilter,
-        currentQuestionIndex: r.currentQuestionIndex,
-        questionStartTime: r.questionStartTime,
-        timeLeftSec: r.timeLeftSec,
-        players: Array.from(r.players.values()),
-        answers: r.answers,
-        activeQuestionIds: r.activeQuestionIds,
-        chatMessages: r.chatMessages.slice(-60),
-      }));
-      const payload = {
-        savedAt: Date.now(),
-        materials: materialsStore,
-        questions: questionsStore,
-        globalAnswerHistory: globalAnswerHistory.slice(-500),
-        rooms: serializedRooms,
-      };
-      fs.writeFileSync(STATE_FILE_PATH, JSON.stringify(payload), 'utf-8');
-    } catch {
-      // Ignore write error on read-only fs
-    }
-  }, 1000);
-}
-
-function loadPersistedStateFromDisk() {
-  try {
-    if (!fs.existsSync(STATE_FILE_PATH)) return;
-    const raw = fs.readFileSync(STATE_FILE_PATH, 'utf-8');
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed.materials) && parsed.materials.length > 0) {
-      materialsStore = parsed.materials;
-    }
-    if (Array.isArray(parsed.questions) && parsed.questions.length > 0) {
-      questionsStore = parsed.questions;
-    }
-    if (Array.isArray(parsed.globalAnswerHistory)) {
-      globalAnswerHistory = parsed.globalAnswerHistory;
-    }
-    if (Array.isArray(parsed.rooms)) {
-      for (const r of parsed.rooms) {
-        const pMap = new Map<string, ClassMapPlayer>();
-        if (Array.isArray(r.players)) {
-          for (const p of r.players) {
-            // Skip legacy 4 NPCs if we updated the template
-            if (p.isRoamingPeer && !ROAMING_PEERS_TEMPLATE.some((t) => t.id === p.id)) {
-              continue;
-            }
-            pMap.set(p.id, {
-              ...p,
-              facingAngle: typeof p.facingAngle === 'number' ? p.facingAngle : Math.PI,
-              jumpY: typeof p.jumpY === 'number' ? p.jumpY : 0,
-              answeredQuestionIds: Array.isArray(p.answeredQuestionIds)
-                ? p.answeredQuestionIds
-                : [],
-            });
-          }
-        }
-        rooms.set(r.pin, {
-          pin: r.pin,
-          roomName: r.roomName || `Kampus MTsN 14 Halim (${r.pin})`,
-          teacherName: r.teacherName || 'Azhary Mardhani, S.Kom',
-          hostId: r.hostId || 'teacher-default',
-          status: r.status || 'PLAYING',
-          categoryFilter: r.categoryFilter || 'Semua Materi',
-          currentQuestionIndex: r.currentQuestionIndex || 0,
-          questionStartTime: r.questionStartTime || Date.now(),
-          timeLeftSec: r.timeLeftSec || 60,
-          players: pMap,
-          answers: Array.isArray(r.answers) ? r.answers : [],
-          activeQuestionIds: Array.isArray(r.activeQuestionIds)
-            ? r.activeQuestionIds
-            : questionsStore.map((q) => q.id),
-          chatMessages: Array.isArray(r.chatMessages) ? r.chatMessages.slice(-60) : [],
-          versusMatches: new Map(),
-        });
-      }
-    }
-  } catch {
-    // Ignore corrupted state file
-  }
-}
-
-function computeSpawnPosition(room: ClassroomRoom, playerId: string): { x: number; y: number } {
-  const existing = room.players.get(playerId);
-  if (existing && !existing.isRoamingPeer) {
-    return { x: existing.x, y: existing.y };
-  }
-  const humanPlayers = Array.from(room.players.values()).filter((p) => !p.isRoamingPeer);
-  const idx = humanPlayers.length;
-  const angle = (idx * 72 * Math.PI) / 180;
-  const radius = idx === 0 ? 0 : 48 + Math.floor(idx / 5) * 32;
-  const spawnX = Math.round(SPAWN_CENTER_X + Math.cos(angle) * radius);
-  const spawnY = Math.round(SPAWN_CENTER_Y + Math.sin(angle) * radius);
-  return { x: spawnX, y: spawnY };
-}
-
-function getOrCreateRoom(
-  rawPin: string,
-  roomName?: string,
-  teacherName?: string,
-  hostId = 'teacher-default',
-  categoryFilter = 'Semua Materi'
-): ClassroomRoom {
-  const pin = normalizeRoomPin(rawPin);
-  let room = rooms.get(pin);
-  if (!room) {
-    const playersMap = new Map<string, ClassMapPlayer>();
-    for (const peer of ROAMING_PEERS_TEMPLATE) {
-      playersMap.set(peer.id, {
+function seedBotsInArena() {
+  for (const peer of ROAMING_PEERS_TEMPLATE) {
+    if (!arenaPlayers.has(peer.id)) {
+      arenaPlayers.set(peer.id, {
         id: peer.id,
         name: peer.name,
         studentClass: peer.studentClass,
@@ -361,42 +248,103 @@ function getOrCreateRoom(
         isRoamingPeer: true,
       });
     }
-
-    room = {
-      pin,
-      roomName: roomName || `Kampus MTsN 14 Halim Jakarta Timur (${pin})`,
-      teacherName: teacherName || 'Azhary Mardhani, S.Kom',
-      hostId,
-      status: 'PLAYING',
-      categoryFilter,
-      currentQuestionIndex: 0,
-      questionStartTime: Date.now(),
-      timeLeftSec: 60,
-      players: playersMap,
-      answers: [],
-      activeQuestionIds: questionsStore.map((q) => q.id),
-      chatMessages: [
-        {
-          id: 'welcome-msg',
-          senderId: 'teacher-system',
-          senderName: 'Pak Azhary Mardhani, S.Kom',
-          senderClass: 'Guru Informatika',
-          senderRole: 'TEACHER',
-          senderColor: '#f59e0b',
-          text: 'Selamat datang di Open-World 3D MTsN 14 Halim! Silakan berjalan, sapa teman lewat Chat, dan ajak Versus 1v1!',
-          timestamp: Date.now(),
-        },
-      ],
-      versusMatches: new Map(),
-    };
-    rooms.set(pin, room);
-    schedulePersistStateToDisk();
   }
-  return room;
+}
+
+let saveTimeout: ReturnType<typeof setTimeout> | null = null;
+
+function schedulePersistStateToDisk() {
+  if (saveTimeout) return;
+  saveTimeout = setTimeout(() => {
+    saveTimeout = null;
+    try {
+      const payload = {
+        savedAt: Date.now(),
+        materials: materialsStore,
+        questions: questionsStore,
+        globalAnswerHistory: globalAnswerHistory.slice(-500),
+        arena: {
+          pin: arenaPin,
+          roomName: arenaRoomName,
+          teacherName: arenaTeacherName,
+          status: arenaStatus,
+          categoryFilter: arenaCategoryFilter,
+          players: Array.from(arenaPlayers.values()),
+          chatMessages: arenaChatMessages.slice(-60),
+        },
+      };
+      fs.writeFileSync(STATE_FILE_PATH, JSON.stringify(payload), 'utf-8');
+    } catch {
+      // Ignore write error on read-only fs
+    }
+  }, 1000);
+}
+
+function loadPersistedStateFromDisk() {
+  try {
+    if (!fs.existsSync(STATE_FILE_PATH)) return;
+    const raw = fs.readFileSync(STATE_FILE_PATH, 'utf-8');
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed.materials) && parsed.materials.length > 0) {
+      materialsStore = parsed.materials;
+    }
+    if (Array.isArray(parsed.questions) && parsed.questions.length > 0) {
+      questionsStore = parsed.questions;
+    }
+    if (Array.isArray(parsed.globalAnswerHistory)) {
+      globalAnswerHistory = parsed.globalAnswerHistory;
+    }
+    if (parsed.arena) {
+      arenaPin = parsed.arena.pin || 'MTN14';
+      arenaCategoryFilter = parsed.arena.categoryFilter || 'Semua Materi';
+      if (Array.isArray(parsed.arena.chatMessages) && parsed.arena.chatMessages.length > 0) {
+        arenaChatMessages = parsed.arena.chatMessages.slice(-60);
+      }
+      if (Array.isArray(parsed.arena.players)) {
+        for (const p of parsed.arena.players) {
+          if (p.isRoamingPeer && !ROAMING_PEERS_TEMPLATE.some((t) => t.id === p.id)) {
+            continue;
+          }
+          arenaPlayers.set(p.id, {
+            ...p,
+            facingAngle: typeof p.facingAngle === 'number' ? p.facingAngle : Math.PI,
+            jumpY: typeof p.jumpY === 'number' ? p.jumpY : 0,
+            answeredQuestionIds: Array.isArray(p.answeredQuestionIds)
+              ? p.answeredQuestionIds
+              : [],
+          });
+        }
+      }
+    }
+  } catch {
+    // Ignore corrupted state file
+  }
 }
 
 loadPersistedStateFromDisk();
-getOrCreateRoom('MTN14', 'Kampus MTsN 14 Halim Jakarta Timur', 'Azhary Mardhani, S.Kom');
+seedBotsInArena();
+
+function computeSpawnPosition(playerId: string): { x: number; y: number } {
+  const existing = arenaPlayers.get(playerId);
+  if (existing && !existing.isRoamingPeer) {
+    return { x: existing.x, y: existing.y };
+  }
+  // Place students in a tight, clearly visible circle around the center of Lapangan Upacara (1200, 780)
+  // Radius is 36..64 map units (3.6..6.4 meters in 3D) so everyone immediately sees each other on screen!
+  let hash = 0;
+  for (let i = 0; i < playerId.length; i++) {
+    hash = (hash * 31 + playerId.charCodeAt(i)) | 0;
+  }
+  const activeHumans = Array.from(arenaPlayers.values()).filter(
+    (p) => !p.isRoamingPeer && Date.now() - p.lastUpdated < 120000
+  );
+  const idx = activeHumans.length;
+  const angle = ((idx * 68 + (Math.abs(hash) % 45)) * Math.PI) / 180;
+  const radius = 38 + (idx % 4) * 14;
+  const spawnX = Math.round(SPAWN_CENTER_X + Math.cos(angle) * radius);
+  const spawnY = Math.round(SPAWN_CENTER_Y + Math.sin(angle) * radius);
+  return { x: spawnX, y: spawnY };
+}
 
 function getFilteredQuestions(categoryFilter: string): InformaticsQuestion[] {
   if (!categoryFilter || categoryFilter === 'Semua Materi') return questionsStore;
@@ -404,120 +352,70 @@ function getFilteredQuestions(categoryFilter: string): InformaticsQuestion[] {
   return filtered.length > 0 ? filtered : questionsStore;
 }
 
-function getSharedVersusMatches(): VersusMatchState[] {
+function getActiveVersusMatches(): VersusMatchState[] {
   const now = Date.now();
   const list: VersusMatchState[] = [];
-  for (const r of rooms.values()) {
-    for (const [mId, match] of r.versusMatches.entries()) {
-      // Clean up old matches after 90 seconds
-      if (now - match.updatedAt > 90000) {
-        r.versusMatches.delete(mId);
-        continue;
-      }
-      list.push(match);
+  for (const [mId, match] of arenaVersusMatches.entries()) {
+    if (now - match.updatedAt > 90000) {
+      arenaVersusMatches.delete(mId);
+      continue;
     }
+    list.push(match);
   }
   return list;
 }
 
-function serializeRoom(room: ClassroomRoom) {
-  const qs = getFilteredQuestions(room.categoryFilter);
+function serializeArena(requestedPin?: string) {
+  const qs = getFilteredQuestions(arenaCategoryFilter);
   const now = Date.now();
-  // Merge all active human players across the shared MTsN 14 Halim arena so every student on any device meets in the same map
-  const mergedPlayersMap = new Map<string, ClassMapPlayer>();
-  for (const p of room.players.values()) {
-    if (p.isRoamingPeer || now - p.lastUpdated < 1000 * 60 * 60 * 2) {
-      mergedPlayersMap.set(p.id, p);
-    }
-  }
-  for (const otherRoom of rooms.values()) {
-    for (const p of otherRoom.players.values()) {
-      if (!p.isRoamingPeer && now - p.lastUpdated < 1000 * 60 * 60 * 2) {
-        const currentInMerged = mergedPlayersMap.get(p.id);
-        if (!currentInMerged || p.lastUpdated >= currentInMerged.lastUpdated) {
-          mergedPlayersMap.set(p.id, p);
-        }
-      }
-    }
-  }
+  seedBotsInArena();
 
-  // Merge recent chat messages across shared arena
-  const allChatMap = new Map<string, RoomChatMessage>();
-  for (const otherRoom of rooms.values()) {
-    for (const msg of otherRoom.chatMessages) {
-      allChatMap.set(msg.id, msg);
+  // Keep all bots + all human players active within the last 5 minutes in the live arena list
+  const activePlayers: ClassMapPlayer[] = [];
+  for (const p of arenaPlayers.values()) {
+    if (p.isRoamingPeer || now - p.lastUpdated < 1000 * 60 * 5) {
+      activePlayers.push(p);
     }
   }
-  const mergedChats = Array.from(allChatMap.values())
-    .sort((a, b) => a.timestamp - b.timestamp)
-    .slice(-50);
 
   return {
-    pin: room.pin,
-    roomName: room.roomName,
-    teacherName: room.teacherName,
-    hostId: room.hostId,
-    status: room.status,
-    categoryFilter: room.categoryFilter,
-    currentQuestionIndex: room.currentQuestionIndex,
+    pin: requestedPin ? normalizeRoomPin(requestedPin) : arenaPin,
+    roomName: arenaRoomName,
+    teacherName: arenaTeacherName,
+    hostId: 'teacher-default',
+    status: arenaStatus,
+    categoryFilter: arenaCategoryFilter,
+    currentQuestionIndex: 0,
     totalQuestions: qs.length,
-    timeLeftSec: room.timeLeftSec,
-    players: Array.from(mergedPlayersMap.values()),
-    answers: room.answers,
-    chatMessages: mergedChats,
-    versusMatches: getSharedVersusMatches(),
+    timeLeftSec: 60,
+    players: activePlayers,
+    answers: globalAnswerHistory.slice(-200),
+    chatMessages: arenaChatMessages.slice(-50),
+    versusMatches: getActiveVersusMatches(),
   };
 }
 
-function findPlayerAcrossRooms(playerId: string): ClassMapPlayer | undefined {
-  for (const r of rooms.values()) {
-    const p = r.players.get(playerId);
-    if (p) return p;
-  }
-  return undefined;
-}
-
-function upsertPlayerInRoom(
-  room: ClassroomRoom,
-  payload: {
-    playerId: string;
-    playerName?: string;
-    studentClass?: string;
-    role?: 'TEACHER' | 'STUDENT';
-    characterPreset?: string;
-    color?: string;
-    x?: number;
-    y?: number;
-    vx?: number;
-    vy?: number;
-    facingAngle?: number;
-    jumpY?: number;
-    score?: number;
-    missionPoints?: number;
-    collectedItemsCount?: number;
-    answeredQuestionIds?: string[];
-  }
-): ClassMapPlayer {
-  let existing = room.players.get(payload.playerId);
-
-  if (!existing && payload.playerName) {
-    const cleanName = payload.playerName.trim().toLowerCase();
-    for (const candidate of room.players.values()) {
-      if (
-        !candidate.isRoamingPeer &&
-        candidate.name.trim().toLowerCase() === cleanName &&
-        (!payload.studentClass || candidate.studentClass === payload.studentClass)
-      ) {
-        existing = candidate;
-        if (existing.id !== payload.playerId) {
-          room.players.delete(existing.id);
-        }
-        break;
-      }
-    }
-  }
-
-  const spawn = computeSpawnPosition(room, payload.playerId);
+// CRITICAL: Keyed strictly by `payload.playerId` — NEVER delete or overwrite another player with the same name!
+function upsertPlayerInArena(payload: {
+  playerId: string;
+  playerName?: string;
+  studentClass?: string;
+  role?: 'TEACHER' | 'STUDENT';
+  characterPreset?: string;
+  color?: string;
+  x?: number;
+  y?: number;
+  vx?: number;
+  vy?: number;
+  facingAngle?: number;
+  jumpY?: number;
+  score?: number;
+  missionPoints?: number;
+  collectedItemsCount?: number;
+  answeredQuestionIds?: string[];
+}): ClassMapPlayer {
+  const existing = arenaPlayers.get(payload.playerId);
+  const spawn = computeSpawnPosition(payload.playerId);
 
   const mergedAnsweredIds = Array.from(
     new Set([
@@ -583,7 +481,7 @@ function upsertPlayerInRoom(
     isRoamingPeer: false,
   };
 
-  room.players.set(payload.playerId, updated);
+  arenaPlayers.set(payload.playerId, updated);
   schedulePersistStateToDisk();
   return updated;
 }
@@ -596,18 +494,18 @@ async function startServer() {
   app.use(express.json({ limit: '2mb' }));
 
   const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
-  const clientRoomMap = new Map<WebSocket, { pin: string; playerId: string }>();
+  const clientPlayerMap = new Map<WebSocket, { pin: string; playerId: string }>();
 
-  function broadcastToRoom(_pin: string, payload: unknown) {
+  // Broadcast to ALL connected WebSocket clients in the unified MTsN 14 Halim Arena
+  function broadcastToArena(payload: unknown) {
     const message = JSON.stringify(payload);
-    for (const [client] of clientRoomMap.entries()) {
+    for (const client of wss.clients) {
       if (client.readyState === WebSocket.OPEN) {
         client.send(message);
       }
     }
   }
 
-  // Helper to create a Versus Challenge (Mutual Consent for real students, auto-accept for training bots)
   function createVersusChallenge(
     rawPin: string,
     challengerId: string,
@@ -616,19 +514,15 @@ async function startServer() {
     opponentId: string
   ): VersusMatchState | null {
     const pin = normalizeRoomPin(rawPin);
-    const room = getOrCreateRoom(pin);
-    const opponent = findPlayerAcrossRooms(opponentId);
+    const opponent = arenaPlayers.get(opponentId);
     if (!opponent) return null;
 
-    // Cancel any previous pending match involving challenger
-    for (const r of rooms.values()) {
-      for (const [mId, existing] of r.versusMatches.entries()) {
-        if (
-          (existing.challengerId === challengerId || existing.opponentId === challengerId) &&
-          existing.status === 'PENDING_CONSENT'
-        ) {
-          r.versusMatches.delete(mId);
-        }
+    for (const [mId, existing] of arenaVersusMatches.entries()) {
+      if (
+        (existing.challengerId === challengerId || existing.opponentId === challengerId) &&
+        existing.status === 'PENDING_CONSENT'
+      ) {
+        arenaVersusMatches.delete(mId);
       }
     }
 
@@ -655,8 +549,8 @@ async function startServer() {
       updatedAt: Date.now(),
     };
 
-    room.versusMatches.set(matchId, match);
-    broadcastToRoom(pin, { type: 'versus:update', payload: match });
+    arenaVersusMatches.set(matchId, match);
+    broadcastToArena({ type: 'versus:update', payload: match });
     return match;
   }
 
@@ -664,16 +558,12 @@ async function startServer() {
     matchId: string,
     accept: boolean
   ): VersusMatchState | null {
-    for (const r of rooms.values()) {
-      const match = r.versusMatches.get(matchId);
-      if (match) {
-        match.status = accept ? 'IN_PROGRESS' : 'DECLINED';
-        match.updatedAt = Date.now();
-        broadcastToRoom(r.pin, { type: 'versus:update', payload: match });
-        return match;
-      }
-    }
-    return null;
+    const match = arenaVersusMatches.get(matchId);
+    if (!match) return null;
+    match.status = accept ? 'IN_PROGRESS' : 'DECLINED';
+    match.updatedAt = Date.now();
+    broadcastToArena({ type: 'versus:update', payload: match });
+    return match;
   }
 
   function submitVersusRoundAnswer(
@@ -683,81 +573,66 @@ async function startServer() {
     selectedIndex: number,
     timeLeftSec: number
   ): VersusMatchState | null {
-    for (const r of rooms.values()) {
-      const match = r.versusMatches.get(matchId);
-      if (!match || match.status !== 'IN_PROGRESS') continue;
+    const match = arenaVersusMatches.get(matchId);
+    if (!match || match.status !== 'IN_PROGRESS') return null;
 
-      const currentQ = match.questions[roundIdx] || match.questions[match.roundIdx];
-      if (!currentQ) continue;
+    const currentQ = match.questions[roundIdx] || match.questions[match.roundIdx];
+    if (!currentQ) return null;
 
-      const isCorrect = selectedIndex === currentQ.correctIndex;
-      const pointsGain = isCorrect ? 100 + Math.max(0, Math.min(8, timeLeftSec)) * 10 : 0;
+    const isCorrect = selectedIndex === currentQ.correctIndex;
+    const pointsGain = isCorrect ? 100 + Math.max(0, Math.min(10, timeLeftSec)) * 10 : 0;
 
-      if (playerId === match.challengerId && match.challengerAnsweredRound < roundIdx) {
-        match.challengerAnsweredRound = roundIdx;
-        match.challengerScore += pointsGain;
-      } else if (playerId === match.opponentId && match.opponentAnsweredRound < roundIdx) {
-        match.opponentAnsweredRound = roundIdx;
-        match.opponentScore += pointsGain;
-      }
-
-      // If opponent is a training bot, simulate bot's answer immediately
-      if (match.isBotOpponent && match.opponentAnsweredRound < roundIdx) {
-        match.opponentAnsweredRound = roundIdx;
-        const botCorrect = Math.random() < 0.65;
-        match.opponentScore += botCorrect ? 115 : 0;
-      }
-
-      // Advance round or finish match once BOTH players have answered this round!
-      if (
-        match.challengerAnsweredRound >= match.roundIdx &&
-        match.opponentAnsweredRound >= match.roundIdx
-      ) {
-        if (match.roundIdx + 1 < match.questions.length) {
-          match.roundIdx += 1;
-        } else {
-          match.status = 'FINISHED';
-          // Credit MP & Score to both players on server
-          const challengerPlayer = findPlayerAcrossRooms(match.challengerId);
-          const opponentPlayer = findPlayerAcrossRooms(match.opponentId);
-          const challengerWon = match.challengerScore >= match.opponentScore;
-          const oppWon = match.opponentScore >= match.challengerScore;
-
-          if (challengerPlayer && !challengerPlayer.isRoamingPeer) {
-            challengerPlayer.missionPoints += challengerWon ? 100 : 45;
-            challengerPlayer.score += challengerWon ? 150 : 60;
-            challengerPlayer.lastUpdated = Date.now();
-          }
-          if (opponentPlayer && !opponentPlayer.isRoamingPeer) {
-            opponentPlayer.missionPoints += oppWon ? 100 : 45;
-            opponentPlayer.score += oppWon ? 150 : 60;
-            opponentPlayer.lastUpdated = Date.now();
-          }
-          schedulePersistStateToDisk();
-        }
-      }
-
-      match.updatedAt = Date.now();
-      broadcastToRoom(r.pin, { type: 'versus:update', payload: match });
-      return match;
+    if (playerId === match.challengerId && match.challengerAnsweredRound < roundIdx) {
+      match.challengerAnsweredRound = roundIdx;
+      match.challengerScore += pointsGain;
+    } else if (playerId === match.opponentId && match.opponentAnsweredRound < roundIdx) {
+      match.opponentAnsweredRound = roundIdx;
+      match.opponentScore += pointsGain;
     }
-    return null;
+
+    if (match.isBotOpponent && match.opponentAnsweredRound < roundIdx) {
+      match.opponentAnsweredRound = roundIdx;
+      const botCorrect = Math.random() < 0.65;
+      match.opponentScore += botCorrect ? 115 : 0;
+    }
+
+    if (
+      match.challengerAnsweredRound >= match.roundIdx &&
+      match.opponentAnsweredRound >= match.roundIdx
+    ) {
+      if (match.roundIdx + 1 < match.questions.length) {
+        match.roundIdx += 1;
+      } else {
+        match.status = 'FINISHED';
+        const challengerPlayer = arenaPlayers.get(match.challengerId);
+        const opponentPlayer = arenaPlayers.get(match.opponentId);
+        const challengerWon = match.challengerScore >= match.opponentScore;
+        const oppWon = match.opponentScore >= match.challengerScore;
+
+        if (challengerPlayer && !challengerPlayer.isRoamingPeer) {
+          challengerPlayer.missionPoints += challengerWon ? 100 : 45;
+          challengerPlayer.score += challengerWon ? 150 : 60;
+          challengerPlayer.lastUpdated = Date.now();
+        }
+        if (opponentPlayer && !opponentPlayer.isRoamingPeer) {
+          opponentPlayer.missionPoints += oppWon ? 100 : 45;
+          opponentPlayer.score += oppWon ? 150 : 60;
+          opponentPlayer.lastUpdated = Date.now();
+        }
+        schedulePersistStateToDisk();
+      }
+    }
+
+    match.updatedAt = Date.now();
+    broadcastToArena({ type: 'versus:update', payload: match });
+    return match;
   }
 
   app.get('/api/bootstrap', (_req, res) => {
-    getOrCreateRoom('MTN14');
-    const activeRooms = Array.from(rooms.values()).map((r) => {
-      const humanCount = Array.from(r.players.values()).filter((p) => !p.isRoamingPeer).length;
-      return {
-        pin: r.pin,
-        roomName: r.roomName,
-        teacherName: r.teacherName,
-        status: r.status,
-        studentCount: humanCount,
-        totalPlayers: r.players.size,
-        categoryFilter: r.categoryFilter,
-      };
-    });
+    const now = Date.now();
+    const humanCount = Array.from(arenaPlayers.values()).filter(
+      (p) => !p.isRoamingPeer && now - p.lastUpdated < 1000 * 60 * 5
+    ).length;
 
     res.json({
       teacher: {
@@ -767,7 +642,17 @@ async function startServer() {
       },
       materials: materialsStore,
       questions: questionsStore,
-      activeRooms,
+      activeRooms: [
+        {
+          pin: arenaPin,
+          roomName: arenaRoomName,
+          teacherName: arenaTeacherName,
+          status: arenaStatus,
+          studentCount: humanCount,
+          totalPlayers: humanCount + ROAMING_PEERS_TEMPLATE.length,
+          categoryFilter: arenaCategoryFilter,
+        },
+      ],
       recentAnswersCount: globalAnswerHistory.length,
     });
   });
@@ -797,20 +682,15 @@ async function startServer() {
     }
 
     const pin = normalizeRoomPin(rawPin);
-    const room = getOrCreateRoom(
-      pin,
-      `Kampus MTsN 14 Halim (${pin})`,
-      'Azhary Mardhani, S.Kom',
-      role === 'TEACHER' ? playerId : 'teacher-default',
-      categoryFilter || 'Semua Materi'
-    );
-
+    arenaPin = pin;
     if (role === 'TEACHER' && categoryFilter) {
-      room.categoryFilter = categoryFilter;
-      room.hostId = playerId;
+      arenaCategoryFilter = categoryFilter;
+    }
+    if (arenaStatus === 'FINISHED') {
+      arenaStatus = 'PLAYING';
     }
 
-    const player = upsertPlayerInRoom(room, {
+    const player = upsertPlayerInArena({
       playerId,
       playerName,
       studentClass,
@@ -825,8 +705,8 @@ async function startServer() {
       answeredQuestionIds,
     });
 
-    const serialized = serializeRoom(room);
-    broadcastToRoom(pin, { type: 'room:state', payload: serialized });
+    const serialized = serializeArena(pin);
+    broadcastToArena({ type: 'room:state', payload: serialized });
 
     res.json({
       room: serialized,
@@ -836,7 +716,7 @@ async function startServer() {
     });
   });
 
-  // Dual-Transport Real-Time Heartbeat & Auto-Save Sync Endpoint
+  // Dual-Transport Real-Time Heartbeat & Auto-Save Sync Endpoint (Every 300ms)
   app.post('/api/room/sync', (req, res) => {
     const {
       pin: rawPin,
@@ -865,11 +745,10 @@ async function startServer() {
     }
 
     const pin = normalizeRoomPin(rawPin);
-    const room = getOrCreateRoom(pin);
-    let p = room.players.get(playerId);
+    let p = arenaPlayers.get(playerId);
 
     if (!p) {
-      p = upsertPlayerInRoom(room, {
+      p = upsertPlayerInArena({
         playerId,
         playerName,
         studentClass,
@@ -920,15 +799,14 @@ async function startServer() {
     }
 
     res.json({
-      room: serializeRoom(room),
+      room: serializeArena(pin),
       player: p,
     });
   });
 
-  // Real-Time Chat Endpoint (Also triggers 3D Overhead Speech Bubble above student avatar!)
+  // Real-Time Chat Endpoint
   app.post('/api/room/chat', (req, res) => {
     const {
-      pin: rawPin,
       senderId,
       senderName,
       senderClass,
@@ -943,8 +821,6 @@ async function startServer() {
       return;
     }
 
-    const pin = normalizeRoomPin(rawPin);
-    const room = getOrCreateRoom(pin);
     const msg: RoomChatMessage = {
       id: `chat-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       senderId,
@@ -956,12 +832,12 @@ async function startServer() {
       timestamp: Date.now(),
     };
 
-    room.chatMessages.push(msg);
-    if (room.chatMessages.length > 60) {
-      room.chatMessages = room.chatMessages.slice(-60);
+    arenaChatMessages.push(msg);
+    if (arenaChatMessages.length > 60) {
+      arenaChatMessages = arenaChatMessages.slice(-60);
     }
 
-    const p = findPlayerAcrossRooms(senderId);
+    const p = arenaPlayers.get(senderId);
     if (p) {
       p.lastChatText = cleanText;
       p.lastChatTime = msg.timestamp;
@@ -969,7 +845,7 @@ async function startServer() {
     }
 
     schedulePersistStateToDisk();
-    broadcastToRoom(pin, { type: 'chat:message', payload: msg });
+    broadcastToArena({ type: 'chat:message', payload: msg });
     res.json({ ok: true, message: msg });
   });
 
@@ -981,7 +857,7 @@ async function startServer() {
       return;
     }
     const match = createVersusChallenge(
-      pin || 'MTN14',
+      pin || arenaPin,
       challengerId,
       challengerName,
       challengerClass,
@@ -1082,37 +958,40 @@ async function startServer() {
 
   // Roaming training bots patrol loop along MTsN 14 Halim walkways (every 250ms)
   setInterval(() => {
-    for (const room of rooms.values()) {
-      for (const p of room.players.values()) {
-        if (!p.isRoamingPeer) continue;
-        p.x += p.vx * 0.25;
-        p.y += p.vy * 0.25;
+    for (const p of arenaPlayers.values()) {
+      if (!p.isRoamingPeer) continue;
+      p.x += p.vx * 0.25;
+      p.y += p.vy * 0.25;
 
-        if (p.x < 320 || p.x > MAP_WIDTH - 320) p.vx *= -1;
-        if (p.y < 260 || p.y > MAP_HEIGHT - 260) p.vy *= -1;
-        p.x = Math.max(280, Math.min(MAP_WIDTH - 280, p.x));
-        p.y = Math.max(240, Math.min(MAP_HEIGHT - 240, p.y));
-        p.facingAngle = Math.atan2(p.vx, p.vy);
-        p.lastUpdated = Date.now();
+      if (p.x < 320 || p.x > MAP_WIDTH - 320) p.vx *= -1;
+      if (p.y < 260 || p.y > MAP_HEIGHT - 260) p.vy *= -1;
+      p.x = Math.max(280, Math.min(MAP_WIDTH - 280, p.x));
+      p.y = Math.max(240, Math.min(MAP_HEIGHT - 240, p.y));
+      p.facingAngle = Math.atan2(p.vx, p.vy);
+      p.lastUpdated = Date.now();
 
-        broadcastToRoom(room.pin, {
-          type: 'player:moved',
-          payload: {
-            playerId: p.id,
-            x: Math.round(p.x),
-            y: Math.round(p.y),
-            vx: p.vx,
-            vy: p.vy,
-            facingAngle: p.facingAngle,
-            jumpY: 0,
-            score: p.score,
-            missionPoints: p.missionPoints,
-            collectedItemsCount: p.collectedItemsCount,
-            answeredCount: p.answeredCount,
-            lastUpdated: p.lastUpdated,
-          },
-        });
-      }
+      broadcastToArena({
+        type: 'player:moved',
+        payload: {
+          playerId: p.id,
+          name: p.name,
+          studentClass: p.studentClass,
+          characterPreset: p.characterPreset,
+          color: p.color,
+          x: Math.round(p.x),
+          y: Math.round(p.y),
+          vx: p.vx,
+          vy: p.vy,
+          facingAngle: p.facingAngle,
+          jumpY: 0,
+          score: p.score,
+          missionPoints: p.missionPoints,
+          collectedItemsCount: p.collectedItemsCount,
+          answeredCount: p.answeredCount,
+          lastUpdated: p.lastUpdated,
+          isRoamingPeer: true,
+        },
+      });
     }
   }, 250);
 
@@ -1124,22 +1003,18 @@ async function startServer() {
 
         if (type === 'room:create' || type === 'room:join') {
           const pin = normalizeRoomPin(payload.pin);
-          const room = getOrCreateRoom(
-            pin,
-            payload.roomName || `Kampus MTsN 14 Halim (${pin})`,
-            payload.teacherName || 'Azhary Mardhani, S.Kom',
-            payload.playerId,
-            payload.categoryFilter || 'Semua Materi'
-          );
+          arenaPin = pin;
 
           if (type === 'room:create' || payload.role === 'TEACHER') {
-            room.hostId = payload.playerId;
             if (payload.categoryFilter) {
-              room.categoryFilter = payload.categoryFilter;
+              arenaCategoryFilter = payload.categoryFilter;
             }
           }
+          if (arenaStatus === 'FINISHED') {
+            arenaStatus = 'PLAYING';
+          }
 
-          const player = upsertPlayerInRoom(room, {
+          const player = upsertPlayerInArena({
             playerId: payload.playerId,
             playerName: payload.playerName,
             studentClass: payload.studentClass,
@@ -1154,8 +1029,8 @@ async function startServer() {
             answeredQuestionIds: payload.answeredQuestionIds,
           });
 
-          clientRoomMap.set(ws, { pin, playerId: payload.playerId });
-          const serialized = serializeRoom(room);
+          clientPlayerMap.set(ws, { pin, playerId: payload.playerId });
+          const serialized = serializeArena(pin);
           ws.send(
             JSON.stringify({
               type: 'room:joined',
@@ -1167,37 +1042,52 @@ async function startServer() {
               },
             })
           );
-          broadcastToRoom(pin, { type: 'room:state', payload: serialized });
+          broadcastToArena({ type: 'room:state', payload: serialized });
         } else if (type === 'player:move') {
-          let meta = clientRoomMap.get(ws);
-          if (!meta && payload.pin && payload.playerId) {
-            meta = { pin: normalizeRoomPin(payload.pin), playerId: String(payload.playerId) };
-            clientRoomMap.set(ws, meta);
+          let meta = clientPlayerMap.get(ws);
+          const pid = String(payload?.playerId || meta?.playerId || '');
+          if (!pid) return;
+          if (!meta) {
+            meta = { pin: normalizeRoomPin(payload?.pin || arenaPin), playerId: pid };
+            clientPlayerMap.set(ws, meta);
           }
-          if (!meta) return;
-          const room = getOrCreateRoom(meta.pin);
-          let p = room.players.get(meta.playerId);
+
+          let p = arenaPlayers.get(pid);
           if (!p) {
-            p = upsertPlayerInRoom(room, {
-              playerId: meta.playerId,
+            p = upsertPlayerInArena({
+              playerId: pid,
               playerName: payload.playerName,
               studentClass: payload.studentClass,
               characterPreset: payload.characterPreset,
               color: payload.color,
+              x: payload.x,
+              y: payload.y,
+              vx: payload.vx,
+              vy: payload.vy,
+              facingAngle: payload.facingAngle,
+              jumpY: payload.jumpY,
             });
+          } else {
+            if (payload.playerName) p.name = payload.playerName;
+            if (payload.studentClass) p.studentClass = payload.studentClass;
+            if (payload.characterPreset) p.characterPreset = payload.characterPreset;
+            if (payload.color) p.color = payload.color;
+            if (typeof payload.x === 'number' && !Number.isNaN(payload.x)) {
+              p.x = Math.max(60, Math.min(MAP_WIDTH - 60, Number(payload.x)));
+            }
+            if (typeof payload.y === 'number' && !Number.isNaN(payload.y)) {
+              p.y = Math.max(60, Math.min(MAP_HEIGHT - 60, Number(payload.y)));
+            }
+            p.vx = Number(payload.vx) || 0;
+            p.vy = Number(payload.vy) || 0;
+            if (typeof payload.facingAngle === 'number') {
+              p.facingAngle = payload.facingAngle;
+            }
+            if (typeof payload.jumpY === 'number') {
+              p.jumpY = payload.jumpY;
+            }
+            p.lastUpdated = Date.now();
           }
-
-          p.x = Math.max(60, Math.min(MAP_WIDTH - 60, Number(payload.x) || p.x));
-          p.y = Math.max(60, Math.min(MAP_HEIGHT - 60, Number(payload.y) || p.y));
-          p.vx = Number(payload.vx) || 0;
-          p.vy = Number(payload.vy) || 0;
-          if (typeof payload.facingAngle === 'number') {
-            p.facingAngle = payload.facingAngle;
-          }
-          if (typeof payload.jumpY === 'number') {
-            p.jumpY = payload.jumpY;
-          }
-          p.lastUpdated = Date.now();
 
           if (typeof payload.scoreBonus === 'number' && payload.scoreBonus > 0) {
             p.score += payload.scoreBonus;
@@ -1211,7 +1101,7 @@ async function startServer() {
 
           schedulePersistStateToDisk();
 
-          broadcastToRoom(meta.pin, {
+          broadcastToArena({
             type: 'player:moved',
             payload: {
               playerId: p.id,
@@ -1232,12 +1122,11 @@ async function startServer() {
               lastChatText: p.lastChatText,
               lastChatTime: p.lastChatTime,
               lastUpdated: p.lastUpdated,
+              isRoamingPeer: false,
             },
           });
         } else if (type === 'chat:send') {
-          const meta = clientRoomMap.get(ws);
-          const pin = normalizeRoomPin(payload?.pin || meta?.pin || 'MTN14');
-          const room = getOrCreateRoom(pin);
+          const meta = clientPlayerMap.get(ws);
           const senderId = String(payload?.senderId || meta?.playerId || '');
           const cleanText = String(payload?.text || '').trim().slice(0, 140);
           if (!senderId || !cleanText) return;
@@ -1252,22 +1141,22 @@ async function startServer() {
             text: cleanText,
             timestamp: Date.now(),
           };
-          room.chatMessages.push(chatMsg);
-          if (room.chatMessages.length > 60) {
-            room.chatMessages = room.chatMessages.slice(-60);
+          arenaChatMessages.push(chatMsg);
+          if (arenaChatMessages.length > 60) {
+            arenaChatMessages = arenaChatMessages.slice(-60);
           }
-          const p = findPlayerAcrossRooms(senderId);
+          const p = arenaPlayers.get(senderId);
           if (p) {
             p.lastChatText = cleanText;
             p.lastChatTime = chatMsg.timestamp;
             p.lastUpdated = Date.now();
           }
           schedulePersistStateToDisk();
-          broadcastToRoom(pin, { type: 'chat:message', payload: chatMsg });
+          broadcastToArena({ type: 'chat:message', payload: chatMsg });
         } else if (type === 'versus:invite') {
-          const meta = clientRoomMap.get(ws);
+          const meta = clientPlayerMap.get(ws);
           createVersusChallenge(
-            payload?.pin || meta?.pin || 'MTN14',
+            payload?.pin || meta?.pin || arenaPin,
             String(payload?.challengerId || meta?.playerId || ''),
             String(payload?.challengerName || 'Siswa MTsN 14'),
             String(payload?.challengerClass || 'Kelas 8A'),
@@ -1284,24 +1173,17 @@ async function startServer() {
             Number(payload?.timeLeftSec) || 5
           );
         } else if (type === 'player:answer_teacher_question') {
-          const meta = clientRoomMap.get(ws);
-          if (!meta) return;
-          const room = rooms.get(meta.pin);
-          if (!room) return;
-          const p = room.players.get(meta.playerId);
+          const meta = clientPlayerMap.get(ws);
+          const pid = String(payload?.playerId || meta?.playerId || '');
+          const p = arenaPlayers.get(pid);
           if (!p) return;
 
           const answerEvent = payload.answerEvent as PlayerAnswerEvent;
           if (!answerEvent || !answerEvent.questionId) return;
 
-          const existingIdx = room.answers.findIndex(
-            (a) => a.questionId === answerEvent.questionId && a.playerId === p.id
-          );
-          if (existingIdx === -1) {
+          if (!p.answeredQuestionIds.includes(answerEvent.questionId)) {
             p.score += answerEvent.pointsEarned;
-            if (!p.answeredQuestionIds.includes(answerEvent.questionId)) {
-              p.answeredQuestionIds.push(answerEvent.questionId);
-            }
+            p.answeredQuestionIds.push(answerEvent.questionId);
             p.answeredCount = p.answeredQuestionIds.length;
             p.lastUpdated = Date.now();
             if (typeof payload.missionPointCost === 'number') {
@@ -1313,47 +1195,21 @@ async function startServer() {
               playerName: `${p.name} (${p.studentClass})`,
               playerTotalScoreAfter: p.score,
             };
-            room.answers.push(recorded);
             globalAnswerHistory.push(recorded);
             schedulePersistStateToDisk();
-            broadcastToRoom(meta.pin, { type: 'room:state', payload: serializeRoom(room) });
+            broadcastToArena({ type: 'room:state', payload: serializeArena(arenaPin) });
           }
-        } else if (type === 'player:versus_complete') {
-          const meta = clientRoomMap.get(ws);
-          if (!meta) return;
-          const room = rooms.get(meta.pin);
-          if (!room) return;
-          const p = room.players.get(meta.playerId);
-          if (!p) return;
-
-          const won = Boolean(payload.won);
-          const mpEarned = Number(payload.mpEarned) || (won ? 100 : 35);
-          const scoreEarned = Number(payload.scoreEarned) || (won ? 150 : 40);
-
-          p.missionPoints += mpEarned;
-          p.score += scoreEarned;
-          p.lastUpdated = Date.now();
-          schedulePersistStateToDisk();
-          broadcastToRoom(meta.pin, { type: 'room:state', payload: serializeRoom(room) });
         } else if (type === 'room:finish_game') {
-          const meta = clientRoomMap.get(ws);
-          if (!meta) return;
-          const room = rooms.get(meta.pin);
-          if (!room) return;
-          room.status = 'FINISHED';
+          arenaStatus = 'FINISHED';
           schedulePersistStateToDisk();
-          broadcastToRoom(meta.pin, { type: 'room:state', payload: serializeRoom(room) });
+          broadcastToArena({ type: 'room:state', payload: serializeArena(arenaPin) });
         } else if (type === 'room:start_game') {
-          const meta = clientRoomMap.get(ws);
-          if (!meta) return;
-          const room = rooms.get(meta.pin);
-          if (!room) return;
           if (payload?.categoryFilter) {
-            room.categoryFilter = payload.categoryFilter;
+            arenaCategoryFilter = payload.categoryFilter;
           }
-          room.status = 'PLAYING';
+          arenaStatus = 'PLAYING';
           schedulePersistStateToDisk();
-          broadcastToRoom(meta.pin, { type: 'room:state', payload: serializeRoom(room) });
+          broadcastToArena({ type: 'room:state', payload: serializeArena(arenaPin) });
         }
       } catch {
         // Ignore malformed packets
@@ -1361,7 +1217,7 @@ async function startServer() {
     });
 
     ws.on('close', () => {
-      clientRoomMap.delete(ws);
+      clientPlayerMap.delete(ws);
     });
   });
 
