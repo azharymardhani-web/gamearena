@@ -1,7 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
+  ALL_CURRICULUM_CHAPTERS,
   InformaticsMaterial,
   InformaticsQuestion,
+  KELAS_7_CHAPTERS,
+  KELAS_8_CHAPTERS,
   OptionKey,
   PlayerAnswerEvent,
 } from '../data/informaticsData';
@@ -446,6 +449,10 @@ interface TeacherQuestModalProps {
   missionPoints: number;
   localPlayerId: string;
   localPlayerName: string;
+  localPlayerClass?: string;
+  isTeacher?: boolean;
+  questionCountLimit?: number;
+  onChangeQuestionCountLimit?: (limit: number) => void;
   onClose: () => void;
   onSubmitTeacherAnswer: (
     event: PlayerAnswerEvent,
@@ -453,6 +460,43 @@ interface TeacherQuestModalProps {
   ) => void;
   onOpenFullAnalysis: () => void;
 }
+
+export const STATION_ROBLOX_ZONES: {
+  buildingTitle: string;
+  questBadge: string;
+  chapterKeywords: string[];
+}[] = [
+  {
+    buildingTitle: 'Gedung Utama & Ruang Guru',
+    questBadge: 'ZONA MISI BAB 1 & BAB 3 (Informatika, Kolaborasi & TIK)',
+    chapterKeywords: ['Bab 1', 'Bab 3'],
+  },
+  {
+    buildingTitle: 'Lab Komputer & Multimedia',
+    questBadge: 'ZONA MISI BAB 4 & BAB 7 (Sistem Komputer & Pemrograman)',
+    chapterKeywords: ['Bab 4', 'Bab 7'],
+  },
+  {
+    buildingTitle: 'Masjid Al - Huda MTsN 14',
+    questBadge: 'ZONA MISI BAB 8 (Dampak Sosial & Etika Digital)',
+    chapterKeywords: ['Bab 8'],
+  },
+  {
+    buildingTitle: 'Gedung Kelas 7-8-9 & Perpustakaan',
+    questBadge: 'ZONA MISI BAB 2 (Berpikir Komputasional)',
+    chapterKeywords: ['Bab 2'],
+  },
+  {
+    buildingTitle: 'Aula Serbaguna & UKS',
+    questBadge: 'ZONA MISI BAB 6 & BAB 9 (Analisis Data & Proyek Lintas Bidang)',
+    chapterKeywords: ['Bab 6', 'Bab 9'],
+  },
+  {
+    buildingTitle: 'Gerbang Jl. Elang & Kantin Digital',
+    questBadge: 'ZONA MISI BAB 5 (Jaringan Komputer & Internet)',
+    chapterKeywords: ['Bab 5'],
+  },
+];
 
 export const TeacherQuestModal: React.FC<TeacherQuestModalProps> = ({
   isOpen,
@@ -462,10 +506,24 @@ export const TeacherQuestModal: React.FC<TeacherQuestModalProps> = ({
   missionPoints,
   localPlayerId,
   localPlayerName,
+  localPlayerClass = 'Kelas 8A',
+  isTeacher = false,
+  questionCountLimit = 0,
+  onChangeQuestionCountLimit,
   onClose,
   onSubmitTeacherAnswer,
   onOpenFullAnalysis,
 }) => {
+  const defaultGradeFromClass = useMemo<'ALL' | 'Kelas 7' | 'Kelas 8'>(() => {
+    if (localPlayerClass.startsWith('Kelas 7')) return 'Kelas 7';
+    if (localPlayerClass.startsWith('Kelas 8')) return 'Kelas 8';
+    return 'ALL';
+  }, [localPlayerClass]);
+
+  const [gradeFilter, setGradeFilter] = useState<'ALL' | 'Kelas 7' | 'Kelas 8'>(
+    defaultGradeFromClass
+  );
+  const [chapterFilter, setChapterFilter] = useState<string>('ALL');
   const [selectedQId, setSelectedQId] = useState<string>('');
   const [questionStartMs, setQuestionStartMs] = useState<number>(performance.now());
   const [textSize, setTextSize] = useState<'SM' | 'MD' | 'LG'>('MD');
@@ -479,12 +537,83 @@ export const TeacherQuestModal: React.FC<TeacherQuestModalProps> = ({
     pointsEarned: number;
   } | null>(null);
 
+  const stationZone =
+    STATION_ROBLOX_ZONES[teacherStationIndex % STATION_ROBLOX_ZONES.length] ||
+    STATION_ROBLOX_ZONES[0];
+
+  // Available chapter options based on selected gradeFilter AND active chapters enabled by the Teacher
+  const availableChapters = useMemo(() => {
+    const baseChapters =
+      gradeFilter === 'Kelas 7'
+        ? KELAS_7_CHAPTERS
+        : gradeFilter === 'Kelas 8'
+        ? KELAS_8_CHAPTERS
+        : ALL_CURRICULUM_CHAPTERS;
+    const activeChapterSet = new Set(
+      questions
+        .filter((q) => gradeFilter === 'ALL' || q.gradeLevel === gradeFilter)
+        .map((q) => q.category)
+    );
+    const filtered = baseChapters.filter((ch) => activeChapterSet.has(ch));
+    return filtered.length > 0 ? filtered : baseChapters;
+  }, [gradeFilter, questions]);
+
+  // Filtered questions list based on gradeFilter, chapterFilter, and questionCountLimit
+  const filteredQuestions = useMemo(() => {
+    let list = questions;
+    // For students, strictly enforce building zone rules (only questions belonging to this building's chapter keywords)
+    if (!isTeacher) {
+      list = list.filter((q) =>
+        stationZone.chapterKeywords.some((kw) => q.category.includes(kw))
+      );
+    }
+    if (gradeFilter !== 'ALL') {
+      const byGrade = list.filter((q) => q.gradeLevel === gradeFilter);
+      if (byGrade.length > 0) list = byGrade;
+    }
+    if (chapterFilter !== 'ALL' && isTeacher) {
+      const byChap = list.filter((q) => q.category === chapterFilter);
+      if (byChap.length > 0) list = byChap;
+    }
+    const baseList = list;
+    if (questionCountLimit && questionCountLimit > 0 && baseList.length > questionCountLimit) {
+      return baseList.slice(0, questionCountLimit);
+    }
+    return baseList;
+  }, [questions, gradeFilter, chapterFilter, questionCountLimit, isTeacher, stationZone]);
+
   useEffect(() => {
     if (isOpen) {
+      const autoGrade: 'ALL' | 'Kelas 7' | 'Kelas 8' = localPlayerClass.startsWith('Kelas 7')
+        ? 'Kelas 7'
+        : localPlayerClass.startsWith('Kelas 8')
+        ? 'Kelas 8'
+        : 'ALL';
+      setGradeFilter(autoGrade);
+      const gradePool =
+        autoGrade === 'ALL'
+          ? questions
+          : questions.filter((q) => q.gradeLevel === autoGrade);
+      const pool = gradePool.length > 0 ? gradePool : questions;
+
+      // Prioritize an unanswered question matching the current building's Roblox Quest Zone!
+      const zoneMatchUnanswered = pool.find(
+        (q) =>
+          !answeredQuestionIds.has(q.id) &&
+          stationZone.chapterKeywords.some((kw) => q.category.startsWith(kw))
+      );
+      const zoneMatchAny = pool.find((q) =>
+        stationZone.chapterKeywords.some((kw) => q.category.startsWith(kw))
+      );
+      const targetChap = zoneMatchUnanswered?.category || zoneMatchAny?.category || 'ALL';
+      setChapterFilter(targetChap);
+
       const firstUnanswered =
-        questions.find((q) => !answeredQuestionIds.has(q.id)) ||
-        questions[teacherStationIndex % Math.max(1, questions.length)] ||
-        questions[0];
+        zoneMatchUnanswered ||
+        pool.find((q) => !answeredQuestionIds.has(q.id)) ||
+        pool[teacherStationIndex % Math.max(1, pool.length)] ||
+        pool[0];
+
       if (firstUnanswered) {
         setSelectedQId(firstUnanswered.id);
       }
@@ -496,11 +625,35 @@ export const TeacherQuestModal: React.FC<TeacherQuestModalProps> = ({
 
   if (!isOpen) return null;
 
+  if (filteredQuestions.length === 0) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+        <div className="bg-white rounded-2xl border-2 border-rose-500 p-6 sm:p-8 max-w-lg text-center space-y-4 shadow-2xl">
+          <div className="w-16 h-16 rounded-2xl bg-rose-100 text-rose-600 border border-rose-300 flex items-center justify-center mx-auto text-2xl font-bold">
+            🛑
+          </div>
+          <h3 className="text-lg sm:text-xl font-extrabold text-slate-900">
+            Gedung Ini Tidak Sesuai dengan Bab Soal Aktif!
+          </h3>
+          <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
+            Sesuai aturan permainan dan pengaturan Guru (Azhary Mardhani, S.Kom), bab soal aktif saat ini berada di gedung yang lain. Kamu tidak dapat mengerjakan soal CBT di gedung ini. Silakan keluar dan menuju gedung yang sesuai dengan petunjuk bab aktif!
+          </p>
+          <button
+            onClick={onClose}
+            className="w-full py-3 px-6 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs sm:text-sm rounded-xl transition-colors shadow-md"
+          >
+            Keluar & Cari Gedung yang Sesuai [ESC]
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const currentIdx = Math.max(
     0,
-    questions.findIndex((q) => q.id === selectedQId)
+    filteredQuestions.findIndex((q) => q.id === selectedQId)
   );
-  const activeQ = questions[currentIdx] || questions[0];
+  const activeQ = filteredQuestions[currentIdx] || filteredQuestions[0];
   if (!activeQ) return null;
 
   const isAlreadyAnswered = answeredQuestionIds.has(activeQ.id);
@@ -508,8 +661,17 @@ export const TeacherQuestModal: React.FC<TeacherQuestModalProps> = ({
   const QUESTION_MP_COST = 40;
   const canAfford = missionPoints >= QUESTION_MP_COST || isAlreadyAnswered;
 
+  const robloxRankTitle =
+    answeredQuestionIds.size >= 9
+      ? 'Lv.4 Grandmaster Dev MTsN 14'
+      : answeredQuestionIds.size >= 6
+      ? 'Lv.3 Logic Scripter'
+      : answeredQuestionIds.size >= 3
+      ? 'Lv.2 Cyber Builder'
+      : 'Lv.1 Rookie Bloxxer';
+
   const handleSelectQuestionByIndex = (idx: number) => {
-    const target = questions[idx];
+    const target = filteredQuestions[idx];
     if (!target) return;
     soundEngine.playClick();
     setSelectedQId(target.id);
@@ -572,7 +734,7 @@ export const TeacherQuestModal: React.FC<TeacherQuestModalProps> = ({
   };
 
   const handleSelectNextUnanswered = () => {
-    const nextUnanswered = questions.find(
+    const nextUnanswered = filteredQuestions.find(
       (q) => q.id !== activeQ.id && !answeredQuestionIds.has(q.id)
     );
     if (nextUnanswered) {
@@ -580,8 +742,10 @@ export const TeacherQuestModal: React.FC<TeacherQuestModalProps> = ({
       setSelectedQId(nextUnanswered.id);
       setQuestionStartMs(performance.now());
       setLastResult(null);
-    } else {
+    } else if (isTeacher) {
       onOpenFullAnalysis();
+    } else {
+      onClose();
     }
   };
 
@@ -614,10 +778,10 @@ export const TeacherQuestModal: React.FC<TeacherQuestModalProps> = ({
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-2 text-[10px] sm:text-xs font-mono font-bold text-amber-300 tracking-wider uppercase">
-                <span>CBT ASESMEN MANDIRI · MTs NEGERI 14 JAKARTA TIMUR</span>
+                <span>CBT ROBLOX QUEST · {stationZone.buildingTitle}</span>
               </div>
               <h1 className="text-sm sm:text-lg font-extrabold text-white truncate">
-                Ujian Kompetensi Informatika — Azhary Mardhani, S.Kom
+                {stationZone.questBadge}
               </h1>
             </div>
           </div>
@@ -627,9 +791,11 @@ export const TeacherQuestModal: React.FC<TeacherQuestModalProps> = ({
             <div className="hidden md:flex items-center gap-4 bg-emerald-900/90 border border-emerald-700 px-3.5 py-1.5 rounded-xl text-xs">
               <div>
                 <span className="text-emerald-300 block text-[10px] font-mono uppercase">
-                  PESERTA UJIAN
+                  PESERTA ({localPlayerClass})
                 </span>
-                <strong className="text-white font-bold">{localPlayerName}</strong>
+                <strong className="text-white font-bold">
+                  {localPlayerName} · <span className="text-amber-300">{robloxRankTitle}</span>
+                </strong>
               </div>
               <div className="h-6 w-px bg-emerald-700" />
               <div>
@@ -689,16 +855,116 @@ export const TeacherQuestModal: React.FC<TeacherQuestModalProps> = ({
         <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-6 items-start">
           {/* LEFT / MAIN COLUMN: LEMBAR SOAL & PILIHAN JAWABAN CBT */}
           <div className="lg:col-span-8 xl:col-span-9 bg-white border-2 border-slate-300 rounded-2xl shadow-md overflow-hidden flex flex-col">
+            {/* Kurikulum Kelas 7 & Kelas 8 (Bab 1 - Bab 9) Selector Bar */}
+            <div className="bg-emerald-900/10 border-b border-slate-200 px-4 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-2.5">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-xs font-extrabold text-slate-700 mr-1">
+                  Kurikulum Ujian:
+                </span>
+                {defaultGradeFromClass !== 'ALL' ? (
+                  <span className="px-3 py-1 rounded-lg text-xs font-extrabold bg-emerald-800 text-white border border-emerald-900 shadow-2xs">
+                    Sesuai Kelas Anda: {localPlayerClass} ({defaultGradeFromClass} · Bab 1–9)
+                  </span>
+                ) : (
+                  (['Kelas 7', 'Kelas 8', 'ALL'] as const).map((gf) => (
+                    <button
+                      key={gf}
+                      type="button"
+                      onClick={() => {
+                        soundEngine.playClick();
+                        setGradeFilter(gf);
+                        setChapterFilter('ALL');
+                        const nextPool =
+                          gf === 'ALL'
+                            ? questions
+                            : questions.filter((q) => q.gradeLevel === gf);
+                        if (nextPool[0]) setSelectedQId(nextPool[0].id);
+                        setLastResult(null);
+                      }}
+                      className={`px-3 py-1 rounded-lg text-xs font-extrabold border transition-colors ${
+                        gradeFilter === gf
+                          ? 'bg-emerald-800 text-white border-emerald-900 shadow-2xs'
+                          : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                      }`}
+                    >
+                      {gf === 'ALL' ? 'Semua Kelas' : `${gf} (Bab 1–9)`}
+                    </button>
+                  ))
+                )}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                {!isTeacher ? (
+                  <span className="px-3 py-1 rounded-lg text-xs font-extrabold bg-amber-400 text-slate-950 border border-amber-500 shadow-2xs">
+                    🔒 BAB AKTIF GURU: {stationZone.chapterKeywords.join(', ')} ({filteredQuestions.length} Soal)
+                  </span>
+                ) : (
+                  <>
+                    <div className="flex items-center gap-1.5">
+                      <label className="text-xs font-bold text-slate-700">Pilih Bab:</label>
+                      <select
+                        value={chapterFilter}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setChapterFilter(val);
+                          const nextPool = questions.filter(
+                            (q) =>
+                              (gradeFilter === 'ALL' || q.gradeLevel === gradeFilter) &&
+                              (val === 'ALL' || q.category === val)
+                          );
+                          if (nextPool[0]) setSelectedQId(nextPool[0].id);
+                          setLastResult(null);
+                        }}
+                        className="px-2.5 py-1 rounded-lg bg-white border border-slate-300 text-xs font-bold text-slate-900 focus:outline-none focus:border-emerald-700 max-w-[200px] sm:max-w-[240px] truncate"
+                      >
+                        <option value="ALL">Semua Bab (Bab 1 s.d. Bab 9)</option>
+                        {availableChapters.map((chap) => (
+                          <option key={chap} value={chap}>
+                            {chap}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      <label className="text-xs font-bold text-slate-700">Banyak Soal:</label>
+                      <select
+                        value={questionCountLimit}
+                        onChange={(e) => {
+                          const nextLimit = Number(e.target.value);
+                          onChangeQuestionCountLimit?.(nextLimit);
+                          setLastResult(null);
+                        }}
+                        className="px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-400 text-xs font-extrabold text-slate-900 focus:outline-none focus:border-emerald-700"
+                      >
+                        <option value={5}>5 Soal</option>
+                        <option value={10}>10 Soal</option>
+                        <option value={15}>15 Soal</option>
+                        <option value={20}>20 Soal</option>
+                        <option value={25}>25 Soal</option>
+                        <option value={30}>30 Soal</option>
+                        <option value={40}>40 Soal</option>
+                        <option value={50}>50 Soal</option>
+                        <option value={0}>Semua Soal</option>
+                      </select>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+
             {/* Question Metadata & Font Size Toolbar */}
             <div className="bg-slate-100 border-b-2 border-slate-200 px-4 sm:px-6 py-3.5 flex flex-wrap items-center justify-between gap-3">
               <div className="flex flex-wrap items-center gap-2.5">
                 <span className="px-3.5 py-1.5 rounded-lg bg-emerald-800 text-white font-mono text-xs sm:text-sm font-extrabold tracking-wide shadow-2xs">
-                  SOAL NO. {currentIdx + 1}
+                  SOAL NO. {currentIdx + 1} / {filteredQuestions.length}
                 </span>
                 <div className="text-xs sm:text-sm text-slate-700 font-medium">
                   <span className="font-bold text-slate-900">{activeQ.category}</span>
                   <span className="mx-1.5 text-slate-400">·</span>
-                  <span>{activeQ.gradeLevel}</span>
+                  <span className="px-2 py-0.5 rounded bg-sky-100 text-sky-900 font-bold text-xs">
+                    {activeQ.gradeLevel}
+                  </span>
                   <span className="mx-1.5 text-slate-400">·</span>
                   <span>Level {activeQ.cognitiveLevel}</span>
                   <span className="mx-1.5 text-slate-400">·</span>
@@ -891,7 +1157,7 @@ export const TeacherQuestModal: React.FC<TeacherQuestModalProps> = ({
               )}
 
               <div className="flex items-center gap-2 ml-auto">
-                {currentIdx + 1 < questions.length ? (
+                {currentIdx + 1 < filteredQuestions.length ? (
                   <button
                     type="button"
                     onClick={() => handleSelectQuestionByIndex(currentIdx + 1)}
@@ -907,9 +1173,11 @@ export const TeacherQuestModal: React.FC<TeacherQuestModalProps> = ({
                     className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs sm:text-sm font-extrabold shadow-xs transition-colors"
                   >
                     <span>
-                      {answeredQuestionIds.size < questions.length
+                      {answeredQuestionIds.size < filteredQuestions.length
                         ? 'Ke Soal Belum Dijawab'
-                        : 'Selesai & Lihat Analisis Nilai'}
+                        : isTeacher
+                        ? 'Selesai & Lihat Analisis Nilai'
+                        : 'Selesai & Kembali ke Arena 3D'}
                     </span>
                     <ArrowRight className="w-4 h-4" />
                   </button>
@@ -928,13 +1196,14 @@ export const TeacherQuestModal: React.FC<TeacherQuestModalProps> = ({
                 </h2>
               </div>
               <span className="text-xs font-mono font-bold text-slate-600">
-                {answeredQuestionIds.size}/{questions.length} Selesai
+                {filteredQuestions.filter((q) => answeredQuestionIds.has(q.id)).length}/
+                {filteredQuestions.length} Selesai
               </span>
             </div>
 
-            {/* Number Grid (5 Columns like standard ANBK/CBT) */}
-            <div className="grid grid-cols-5 gap-2">
-              {questions.map((q, idx) => {
+            {/* Number Grid (5 Columns like standard ANBK/CBT, scrollable for 20-180 items) */}
+            <div className="grid grid-cols-5 gap-2 max-h-[340px] overflow-y-auto pr-1">
+              {filteredQuestions.map((q, idx) => {
                 const done = answeredQuestionIds.has(q.id);
                 const doubtful = doubtfulIds.has(q.id);
                 const isCurrent = q.id === activeQ.id;
@@ -956,7 +1225,7 @@ export const TeacherQuestModal: React.FC<TeacherQuestModalProps> = ({
                     type="button"
                     onClick={() => handleSelectQuestionByIndex(idx)}
                     className={`h-11 rounded-xl font-mono text-xs sm:text-sm font-bold flex flex-col items-center justify-center transition-all ${boxClass}`}
-                    title={`Soal #${idx + 1}: ${q.category}`}
+                    title={`Soal #${idx + 1} (${q.gradeLevel}): ${q.category}`}
                   >
                     <span>{idx + 1}</span>
                     {done && recordedChoices[q.id] && (
@@ -1006,13 +1275,15 @@ export const TeacherQuestModal: React.FC<TeacherQuestModalProps> = ({
 
             {/* Actions */}
             <div className="pt-2 space-y-2">
-              <button
-                type="button"
-                onClick={onOpenFullAnalysis}
-                className="w-full py-2.5 px-4 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-extrabold transition-colors shadow-xs"
-              >
-                Lihat Rekap Nilai & Analisis CBT
-              </button>
+              {isTeacher && (
+                <button
+                  type="button"
+                  onClick={onOpenFullAnalysis}
+                  className="w-full py-2.5 px-4 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-extrabold transition-colors shadow-xs"
+                >
+                  Lihat Rekap Nilai & Analisis CBT
+                </button>
+              )}
               <button
                 type="button"
                 onClick={onClose}

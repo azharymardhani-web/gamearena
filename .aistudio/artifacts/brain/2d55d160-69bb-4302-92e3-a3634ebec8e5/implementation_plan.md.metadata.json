@@ -1,0 +1,6 @@
+{
+  "summary":  "Implementation plan for enforcing CBT active building physical navigation, adding 3D visual beacon markers for active chapter buildings, removing in-game question selector menus for students, and displaying directional HUD alerts when near wrong buildings.",
+  "updatedAt":  "2026-11-01T17:54:54.650440971Z",
+  "requestFeedback":  true,
+  "userFacing":  true
+}

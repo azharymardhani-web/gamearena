@@ -13,7 +13,8 @@ export interface ArenaSyncPacket {
     | 'chat:message'
     | 'versus:update'
     | 'teacher:answer'
-    | 'room:status';
+    | 'room:status'
+    | 'room:config';
   payload: any;
 }
 

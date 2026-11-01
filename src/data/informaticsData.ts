@@ -1,3 +1,6 @@
+import { QUESTIONS_KELAS_7 } from './questionsKelas7';
+import { QUESTIONS_KELAS_8 } from './questionsKelas8';
+
 export type OptionKey = 'A' | 'B' | 'C' | 'D';
 
 export type CognitiveLevel =
@@ -9,12 +12,62 @@ export type CognitiveLevel =
   | 'C6 - Mencipta';
 
 export type MaterialCategory =
+  | 'Bab 1 : Informatika dan Keterampilan Generik'
+  | 'Bab 1 : Informatika dan Pembelajarannya'
+  | 'Bab 2 : Berpikir Komputasional'
+  | 'Bab 3 : Teknologi Informasi dan Komunikasi'
+  | 'Bab 4 : Sistem Komputer'
+  | 'Bab 5 : Jaringan Komputer dan Internet'
+  | 'Bab 6 : Analisis Data'
+  | 'Bab 7 : Algoritma dan Pemrograman'
+  | 'Bab 8 : Dampak Sosial Informatika'
+  | 'Bab 9 : Praktika Lintas Bidang Informatika'
+  | 'Bab 9 : Praktik Lintas Bidang (Proyek)'
+  // Legacy compatibility union
   | 'Berpikir Komputasional'
   | 'Sistem Komputer'
   | 'Jaringan Komputer & Internet'
   | 'Algoritma & Pemrograman'
   | 'Analisis Data'
   | 'Dampak Sosial & Keamanan Siber';
+
+export const KELAS_7_CHAPTERS: MaterialCategory[] = [
+  'Bab 1 : Informatika dan Keterampilan Generik',
+  'Bab 2 : Berpikir Komputasional',
+  'Bab 3 : Teknologi Informasi dan Komunikasi',
+  'Bab 4 : Sistem Komputer',
+  'Bab 5 : Jaringan Komputer dan Internet',
+  'Bab 6 : Analisis Data',
+  'Bab 7 : Algoritma dan Pemrograman',
+  'Bab 8 : Dampak Sosial Informatika',
+  'Bab 9 : Praktika Lintas Bidang Informatika',
+];
+
+export const KELAS_8_CHAPTERS: MaterialCategory[] = [
+  'Bab 1 : Informatika dan Pembelajarannya',
+  'Bab 2 : Berpikir Komputasional',
+  'Bab 3 : Teknologi Informasi dan Komunikasi',
+  'Bab 4 : Sistem Komputer',
+  'Bab 5 : Jaringan Komputer dan Internet',
+  'Bab 6 : Analisis Data',
+  'Bab 7 : Algoritma dan Pemrograman',
+  'Bab 8 : Dampak Sosial Informatika',
+  'Bab 9 : Praktik Lintas Bidang (Proyek)',
+];
+
+export const ALL_CURRICULUM_CHAPTERS: MaterialCategory[] = [
+  'Bab 1 : Informatika dan Keterampilan Generik',
+  'Bab 1 : Informatika dan Pembelajarannya',
+  'Bab 2 : Berpikir Komputasional',
+  'Bab 3 : Teknologi Informasi dan Komunikasi',
+  'Bab 4 : Sistem Komputer',
+  'Bab 5 : Jaringan Komputer dan Internet',
+  'Bab 6 : Analisis Data',
+  'Bab 7 : Algoritma dan Pemrograman',
+  'Bab 8 : Dampak Sosial Informatika',
+  'Bab 9 : Praktika Lintas Bidang Informatika',
+  'Bab 9 : Praktik Lintas Bidang (Proyek)',
+];
 
 export interface InformaticsMaterial {
   id: string;
@@ -90,414 +143,324 @@ export interface ItemAnalysisResult {
 }
 
 export const INITIAL_MATERIALS: InformaticsMaterial[] = [
+  // =========================================================================
+  // MATERI KELAS 7 (BAB 1 S.D. BAB 9)
+  // =========================================================================
   {
-    id: 'mat-bk-01',
-    title: 'Empat Pilar Berpikir Komputasional & Struktur Data',
-    category: 'Berpikir Komputasional',
+    id: 'mat-k7-bab1',
+    title: 'Bab 1 (Kelas 7): Informatika dan Keterampilan Generik',
+    category: 'Bab 1 : Informatika dan Keterampilan Generik',
     gradeLevel: 'Kelas 7',
     summary:
-      'Berpikir Komputasional (Computational Thinking) adalah metode menyelesaikan masalah kompleks secara sistematis menggunakan Dekomposisi, Pengenalan Pola, Abstraksi, dan Perancangan Algoritma.',
+      'Mengenal bidang ilmu Informatika serta keterampilan generik bekerja dalam kelompok (kolaborasi layaknya tim developer Roblox), pembagian peran, dan mengomunikasikan hasil kerja lewat infografis serta presentasi.',
     keyPoints: [
-      'Dekomposisi: Memecah masalah besar menjadi sub-masalah yang lebih kecil dan mudah dikelola.',
-      'Pengenalan Pola: Mencari kesamaan atau tren di antara berbagai permasalahan.',
-      'Abstraksi: Menyaring informasi penting dan mengabaikan detail yang tidak relevan.',
-      'Algoritma: Menyusun langkah-langkah logis berurutan untuk menyelesaikan masalah.',
+      'Informatika mencakup bidang studi sistem komputasi, analisis data, algoritma, dan dampak sosial.',
+      'Kolaborasi Tim: Pembagian tugas secara adil (ketua proyek, desainer, programmer, penguji) agar proyek selesai tepat waktu.',
+      'Infografis yang baik memuat informasi visual ringkas, hierarki teks jelas, dan ilustrasi pendukung.',
+      'Presentasi efektif menyampaikan poin inti dengan bahasa yang terstruktur dan percaya diri.',
     ],
-    formulaOrLogic: 'Masalah Kompleks -> Dekomposisi -> Pola -> Abstraksi -> Solusi Algoritmik',
+    formulaOrLogic: 'Perencanaan Proyek -> Pembagian Peran Tim -> Kolaborasi -> Infografis & Presentasi',
     author: 'Azhary Mardhani, S.Kom (MTsN 14 Jakarta)',
     createdAt: '2026-10-01',
   },
   {
-    id: 'mat-sk-02',
-    title: 'Arsitektur Sistem Komputer & Bilangan Biner',
-    category: 'Sistem Komputer',
-    gradeLevel: 'Kelas 8',
+    id: 'mat-k7-bab2',
+    title: 'Bab 2 (Kelas 7): Berpikir Komputasional (Algoritma, Optimasi, List & Representasi Data)',
+    category: 'Bab 2 : Berpikir Komputasional',
+    gradeLevel: 'Kelas 7',
     summary:
-      'Sistem komputer terdiri atas Perangkat Keras (Hardware), Perangkat Lunak (Software), dan Pengguna (Brainware). Komputer memproses data menggunakan sistem bilangan biner berbasis 2 (0 dan 1).',
+      'Menyelesaikan persoalan sehari-hari secara efisien dengan menyusun urutan langkah (Algoritma), mengoptimalkan jadwal/kapasitas (Optimasi Penjadwalan), menyusun Struktur Data List, dan Representasi Data Biner (Ya/Tidak atau Hitam/Putih).',
     keyPoints: [
-      'CPU terdiri dari Control Unit (CU), Arithmetic Logic Unit (ALU), dan Register.',
-      'RAM bersifat volatile (data hilang saat listrik mati), sedangkan ROM bersifat non-volatile.',
-      'Konversi Biner ke Desimal: Kalikan tiap bit dengan 2 pangkat posisinya dari kanan (2^0, 2^1, 2^2, dst).',
-      'Gerbang Logika Dasar: AND (bernilai 1 jika semua input 1), OR (1 jika salah satu 1), NOT (pembalik nilai).',
+      'Algoritma: Urutan langkah logis dan terbatas untuk menyelesaikan masalah.',
+      'Optimasi Penjadwalan: Mengatur waktu dan sumber daya agar pekerjaan selesai paling cepat dan efisien.',
+      'Struktur Data Daftar (List): Menyimpan sekumpulan item secara berurutan agar mudah dicari.',
+      'Representasi Data: Citra hitam-putih pada layar direpresentasikan dengan bit 0 (putih/mati) dan 1 (hitam/nyala).',
     ],
-    formulaOrLogic: '1101(2) = (1×2³) + (1×2²) + (0×2¹) + (1×2⁰) = 8 + 4 + 0 + 1 = 13(10)',
+    formulaOrLogic: 'Dekomposisi -> Pengenalan Pola -> Abstraksi -> Algoritma & Optimasi',
+    author: 'Azhary Mardhani, S.Kom (MTsN 14 Jakarta)',
+    createdAt: '2026-10-02',
+  },
+  {
+    id: 'mat-k7-bab3',
+    title: 'Bab 3 (Kelas 7): Teknologi Informasi dan Komunikasi (GUI, Folder, Peramban & Surel)',
+    category: 'Bab 3 : Teknologi Informasi dan Komunikasi',
+    gradeLevel: 'Kelas 7',
+    summary:
+      'Mengenal antarmuka pengguna grafis (GUI), mengelola folder dan file secara rapi berdasarkan ekstensi, menggunakan peramban (Browser) dan mesin pencari (Search Engine), serta berkomunikasi resmi via Surel (Email).',
+    keyPoints: [
+      'GUI (Graphical User Interface) memudahkan interaksi pengguna lewat ikon, jendela, menu, dan pointer.',
+      'Ekstensi File menunjukkan jenis berkas: .docx (dokumen), .xlsx (spreadsheet), .jpg/.png (gambar), .mp4 (video).',
+      'Search Engine mencari informasi dengan kata kunci spesifik, sedangkan Browser menampilkan halaman web.',
+      'Etika mengirim Surel (Email): mengisi Subjek yang jelas, menggunakan kolom CC/BCC dengan tepat, dan bahasa sopan.',
+    ],
+    formulaOrLogic: 'Root Directory -> Folder Kelas -> Subfolder Bab -> File Ber-ekstensi (.docx / .pdf)',
     author: 'Azhary Mardhani, S.Kom (MTsN 14 Jakarta)',
     createdAt: '2026-10-03',
   },
   {
-    id: 'mat-jk-03',
-    title: 'Topologi Jaringan, Protokol TCP/IP & Keamanan Routing',
-    category: 'Jaringan Komputer & Internet',
-    gradeLevel: 'Kelas 8',
+    id: 'mat-k7-bab4',
+    title: 'Bab 4 (Kelas 7): Sistem Komputer (Hardware, Software, Brainware & Biner Dasar)',
+    category: 'Bab 4 : Sistem Komputer',
+    gradeLevel: 'Kelas 7',
     summary:
-      'Jaringan komputer menghubungkan berbagai perangkat untuk berbagi data melalui media kabel (UTP/Fiber Optik) maupun nirkabel (Wi-Fi) dengan aturan protokol komunikasi TCP/IP.',
+      'Memahami komponen penyusun sistem komputer yang terdiri dari Perangkat Keras (Input, Proses, Output, Storage), Perangkat Lunak (Sistem Operasi & Aplikasi), serta representasi bilangan biner.',
     keyPoints: [
-      'Topologi Star menggunakan Switch/Hub pusat: jika satu kabel klien putus, komputer lain tetap aman.',
-      'DNS (Domain Name System) menerjemahkan nama domain (mtsn14-jkt.sch.id) menjadi alamat IP.',
-      'HTTPS menggunakan enkripsi SSL/TLS sehingga paket data aman dari penyadapan (sniffing).',
-      ' Lebar pita (Bandwidth) menentukan kapasitas maksimum transfer data dalam satuan Mbps/Gbps.',
+      'Perangkat Input: Keyboard, Mouse, Scanner, Microphone. Perangkat Output: Monitor, Printer, Speaker.',
+      'CPU (Central Processing Unit) adalah otak pemrosesan yang terdiri atas CU, ALU, dan Register.',
+      'Sistem Operasi (Windows, Linux, Android) mengelola perangkat keras dan menjadi wadah berjalannya aplikasi.',
+      'Komputer menyimpan data dalam satuan bit (0 atau 1), di mana 1 Byte = 8 bit.',
     ],
-    formulaOrLogic: 'Client -> Request DNS -> IP Server -> Handshake TLS/HTTPS -> Paket Data Terenkripsi',
+    formulaOrLogic: 'Input Device -> CPU (CU + ALU) <-> RAM -> Output Device',
+    author: 'Azhary Mardhani, S.Kom (MTsN 14 Jakarta)',
+    createdAt: '2026-10-04',
+  },
+  {
+    id: 'mat-k7-bab5',
+    title: 'Bab 5 (Kelas 7): Jaringan Komputer dan Internet (Wi-Fi, Tethering & Enkripsi Caesar)',
+    category: 'Bab 5 : Jaringan Komputer dan Internet',
+    gradeLevel: 'Kelas 7',
+    summary:
+      'Mengenal cara menghubungkan perangkat ke internet melalui jaringan kabel maupun nirkabel (Wi-Fi & Tethering), serta melindungi pesan rahasia menggunakan teknik enkripsi sederhana (Caesar Cipher).',
+    keyPoints: [
+      'Jaringan komputer memungkinkan pertukaran data dan berbagi sumber daya antarperangkat.',
+      'Tethering menjadikan smartphone sebagai titik akses (Hotspot) Wi-Fi portabel bagi perangkat lain.',
+      'Enkripsi mengubah teks asli (Plaintext) menjadi teks sandi (Ciphertext) agar tidak bisa dibaca pihak asing.',
+      'Caesar Cipher menggeser setiap huruf alfabet sejauh kunci tertentu (misal geser +2 atau +3).',
+    ],
+    formulaOrLogic: 'Plaintext -> Enkripsi (Kunci Geser) -> Ciphertext -> Dekripsi -> Plaintext',
     author: 'Azhary Mardhani, S.Kom (MTsN 14 Jakarta)',
     createdAt: '2026-10-05',
   },
   {
-    id: 'mat-ap-04',
-    title: 'Algoritma, Flowchart, Percabangan & Perulangan',
-    category: 'Algoritma & Pemrograman',
-    gradeLevel: 'Kelas 9',
+    id: 'mat-k7-bab6',
+    title: 'Bab 6 (Kelas 7): Analisis Data (Dasar Lembar Kerja, Rumus Dasar & Sort/Filter)',
+    category: 'Bab 6 : Analisis Data',
+    gradeLevel: 'Kelas 7',
     summary:
-      'Pemrograman menerjemahkan algoritma menjadi instruksi yang dapat dijalankan komputer melalui struktur runtunan (sequence), percabangan (selection), dan perulangan (iteration).',
+      'Mengenal perkakas pengolah lembar kerja (Spreadsheet), memahami pertemuan kolom dan baris (Cell/Range), menggunakan fungsi statistik dasar (SUM, AVERAGE, MAX, MIN, COUNT), serta mengurutkan data (Sorting).',
     keyPoints: [
-      'Simbol Belah Ketupat (Diamond) pada Flowchart melambangkan Decision / Percabangan (Ya/Tidak).',
-      'Simbol Jajar Genjang (Parallelogram) melambangkan Input / Output data.',
-      'Operator Modulo (%) menghasilkan sisa pembagian bulat (contoh: 17 % 5 = 2).',
-      'Looping (For/While) mengeksekusi blok kode berulang kali selama kondisi bernilai True.',
+      'Sel (Cell) dinamai dari Kolom dan Baris (contoh: B5), sedangkan Rentang (Range) kumpulan sel (B2:B10).',
+      'Referensi Relatif (A1) berubah saat disalin, sedangkan Referensi Absolut ($A$1) tetap terkunci.',
+      'Fungsi dasar: =SUM() menjumlahkan, =AVERAGE() merata-rata, =MAX() nilai tertinggi, =MIN() nilai terendah.',
+      'Sorting mengurutkan data (A-Z / terkecil-terbesar), sedangkan Filtering menyaring baris sesuai kriteria.',
     ],
-    formulaOrLogic: 'IF (Nilai >= 78) THEN Status = "Tuntas" ELSE Status = "Remedial"',
+    formulaOrLogic: '=SUM(C2:C10) | =AVERAGE(C2:C10) | Kunci Sel Absolut: $C$2',
+    author: 'Azhary Mardhani, S.Kom (MTsN 14 Jakarta)',
+    createdAt: '2026-10-06',
+  },
+  {
+    id: 'mat-k7-bab7',
+    title: 'Bab 7 (Kelas 7): Algoritma dan Pemrograman (Pemrograman Visual Scratch / Blockly)',
+    category: 'Bab 7 : Algoritma dan Pemrograman',
+    gradeLevel: 'Kelas 7',
+    summary:
+      'Mempelajari logika pemrograman tanpa hambatan sintaks menggunakan blok kode visual (Scratch / Blockly) untuk menggerakkan karakter (Sprite) di dalam panggung (Stage) layaknya membuat game di Roblox Studio.',
+    keyPoints: [
+      'Event Block (misal: "When Green Flag Clicked") memulai eksekusi skrip program.',
+      'Motion Block mengatur pergerakan koordinat X dan Y serta arah hadap karakter (Sprite).',
+      'Control Block mengatur pengulangan (Repeat / Forever) dan percabangan kondisi (If - Then).',
+      'Debugging adalah proses mencari dan memperbaiki kesalahan urutan blok agar karakter bergerak sesuai misi.',
+    ],
+    formulaOrLogic: 'When Flag Clicked -> Repeat(4) [ Move 50 Steps -> Turn Right 90° ]',
+    author: 'Azhary Mardhani, S.Kom (MTsN 14 Jakarta)',
+    createdAt: '2026-10-07',
+  },
+  {
+    id: 'mat-k7-bab8',
+    title: 'Bab 8 (Kelas 7): Dampak Sosial Informatika (Kolaborasi Maya, Privasi & Hak Cipta)',
+    category: 'Bab 8 : Dampak Sosial Informatika',
+    gradeLevel: 'Kelas 7',
+    summary:
+      'Memahami perkembangan teknologi informasi dalam kehidupan sehari-hari, memanfaatkan kolaborasi di dunia maya secara positif, serta menjaga informasi pribadi dan menghormati karya orang lain.',
+    keyPoints: [
+      'Dampak positif TIK: pembelajaran jarak jauh, kolaborasi dokumen awan, dan kemudahan komunikasi.',
+      'Informasi Pribadi (Password, PIN, OTP, Alamat Rumah, Nomor NIK) tidak boleh dibagikan ke publik.',
+      'Etika Digital (Netiquette): berkomentar santun, menghargai privasi teman, dan menghindari plagiarisme.',
+      'Lisensi perangkat lunak menentukan hak penggunaan: Commercial, Freeware, dan Open Source.',
+    ],
+    formulaOrLogic: 'Data Pribadi + Password Kuat + 2FA = Identitas Digital Aman',
     author: 'Azhary Mardhani, S.Kom (MTsN 14 Jakarta)',
     createdAt: '2026-10-08',
   },
   {
-    id: 'mat-ad-05',
-    title: 'Analisis Data & Fungsi Statistik Lembar Kerja',
-    category: 'Analisis Data',
+    id: 'mat-k7-bab9',
+    title: 'Bab 9 (Kelas 7): Praktika Lintas Bidang Informatika (Artefak Komputasional)',
+    category: 'Bab 9 : Praktika Lintas Bidang Informatika',
+    gradeLevel: 'Kelas 7',
+    summary:
+      'Mengintegrasikan seluruh pengetahuan Informatika untuk merancang dan mengembangkan artefak komputasional interaktif (seperti simulasi papan sirkuit Makey Makey atau purwarupa proyek kelompok).',
+    keyPoints: [
+      'Artefak Komputasional adalah objek yang diciptakan manusia menggunakan proses berpikir komputasional.',
+      'Tahapan Proyek: Identifikasi Masalah -> Desain Solusi -> Implementasi/Koding -> Pengujian (Testing).',
+      'Konduktor menghantarkan arus listrik (logam, air, grafit pensil), sedangkan Isolator menghambat arus (plastik, kayu kering).',
+      'Evaluasi dan dokumentasi proyek melatih kerja sama tim layaknya studio pengembang game.',
+    ],
+    formulaOrLogic: 'Ide Proyek -> Desain Purwarupa -> Rangkaian & Kode Visual -> Uji Coba Pengguna',
+    author: 'Azhary Mardhani, S.Kom (MTsN 14 Jakarta)',
+    createdAt: '2026-10-09',
+  },
+
+  // =========================================================================
+  // MATERI KELAS 8 (BAB 1 S.D. BAB 9)
+  // =========================================================================
+  {
+    id: 'mat-k8-bab1',
+    title: 'Bab 1 (Kelas 8): Informatika dan Pembelajarannya',
+    category: 'Bab 1 : Informatika dan Pembelajarannya',
     gradeLevel: 'Kelas 8',
     summary:
-      'Analisis data membantu mengolah kumpulan data mentah menjadi informasi bermakna menggunakan fungsi agregasi, pencarian referensi, serta visualisasi grafik yang tepat.',
+      'Merefleksikan kaitan antar-elemen Informatika dari kelas 7 ke kelas 8, menyusun rencana belajar berbasis proyek, dan mendokumentasikan progres belajar dalam jurnal digital siswa.',
     keyPoints: [
-      'SUM menjumlahkan rentang sel, AVERAGE menghitung rata-rata, MAX/MIN mencari nilai tertinggi/terendah.',
-      'COUNTIF menghitung jumlah sel yang memenuhi kriteria tertentu (misal jumlah siswa nilai > 85).',
-      'VLOOKUP mencari data secara vertikal berdasarkan kunci kolom pertama tabel referensi.',
-      'Grafik Garis (Line Chart) ideal untuk tren waktu, sedangkan Diagram Batang untuk perbandingan kategori.',
+      'Rumah Informatika dibangun di atas fondasi Berpikir Komputasional dengan pilar TIK, Sistem Komputer, Jaringan, Analisis Data, dan Algoritma.',
+      'Pembelajaran berpusat pada siswa (Student-Centered Learning) melalui pemecahan kasus nyata (Problem-Based Learning).',
+      'Refleksi pembelajaran membantu siswa mengenali materi yang sudah dikuasai dan yang perlu ditingkatkan.',
+      'Portofolio digital merekam artefak karya, kode program, dan laporan proyek selama satu semester.',
     ],
-    formulaOrLogic: '=AVERAGE(C2:C15) | =COUNTIF(D2:D30, ">=80")',
+    formulaOrLogic: 'Refleksi Kelas 7 -> Pemetaan Elemen Kelas 8 -> Proyek Kolaboratif -> Jurnal Digital',
     author: 'Azhary Mardhani, S.Kom (MTsN 14 Jakarta)',
     createdAt: '2026-10-10',
   },
   {
-    id: 'mat-ds-06',
-    title: 'Keamanan Siber, Kriptografi & Etika Digital',
-    category: 'Dampak Sosial & Keamanan Siber',
-    gradeLevel: 'Kelas 9',
+    id: 'mat-k8-bab2',
+    title: 'Bab 2 (Kelas 8): Berpikir Komputasional (Fungsi, Himpunan, Bilangan, Stack & Queue)',
+    category: 'Bab 2 : Berpikir Komputasional',
+    gradeLevel: 'Kelas 8',
     summary:
-      'Literasi keamanan siber melindungi identitas digital siswa dari serangan rekayasa sosial (Phishing), malware, serta menumbuhkan etika berinternet dan penghormatan Hak Cipta.',
+      'Memperdalam konsep Fungsi matematika-komputasi (Input-Proses-Output), operasi Himpunan (Irisan/Gabungan), konversi Sistem Bilangan (Biner, Oktal, Desimal), serta Struktur Data Tumpukan (Stack) dan Antrean (Queue).',
     keyPoints: [
-      'Phishing adalah upaya mencuri kredensial (password/OTP) dengan menyamar sebagai situs resmi.',
-      'Two-Factor Authentication (2FA) menambah lapisan keamanan ekstra selain kata sandi.',
-      'Caesar Cipher menggeser huruf alfabet sejauh kunci N (contoh geser +3: A -> D, B -> E).',
-      'Jejak Digital Pasif vs Aktif: segala unggahan di internet bersifat permanen dan berdampak jangka panjang.',
+      'Fungsi f(x) memetakan setiap nilai input ke tepat satu nilai output berdasarkan aturan proses tertentu.',
+      'Stack (Tumpukan) menganut prinsip LIFO (Last In, First Out): elemen terakhir yang masuk keluar lebih dulu.',
+      'Queue (Antrean) menganut prinsip FIFO (First In, First Out): elemen pertama yang antre dilayani lebih dulu.',
+      'Operasi Himpunan: Irisan (Intersection / AND) mengambil anggota yang sama di kedua himpunan.',
     ],
-    formulaOrLogic: 'Enkripsi Caesar(Kunci +3): "MTS" -> "PWV"',
+    formulaOrLogic: 'Stack = LIFO (Tumpukan Buku) | Queue = FIFO (Antrean Loket) | f(x) = 2x + 3',
+    author: 'Azhary Mardhani, S.Kom (MTsN 14 Jakarta)',
+    createdAt: '2026-10-11',
+  },
+  {
+    id: 'mat-k8-bab3',
+    title: 'Bab 3 (Kelas 8): Teknologi Informasi dan Komunikasi (Integrasi Aplikasi & Lab Maya)',
+    category: 'Bab 3 : Teknologi Informasi dan Komunikasi',
+    gradeLevel: 'Kelas 8',
+    summary:
+      'Mengintegrasikan aplikasi pengolah kata, pengolah lembar kerja, dan pengolah presentasi untuk membuat laporan terpadu yang dinamis, serta memanfaatkan Laboratorium Maya (Virtual Lab) untuk simulasi.',
+    keyPoints: [
+      'Integrasi Objek (OLE / Copy-Paste Link): Grafik dari Excel diintegrasikan ke Word/PowerPoint agar ikut terbarui.',
+      'Mail Merge memudahkan pembuatan surat/sertifikat massal dengan menggabungkan template dokumen dan tabel data.',
+      'Fitur Table of Contents (Daftar Isi Otomatis) dibuat menggunakan format Heading 1, Heading 2, dan Heading 3.',
+      'Laboratorium Maya (seperti PhET atau simulasi 3D) memungkinkan eksperimen sains dan komputer secara aman.',
+    ],
+    formulaOrLogic: 'Tabel & Grafik Spreadsheet -> Copy Link / Embed -> Dokumen Laporan & Slide Presentasi',
     author: 'Azhary Mardhani, S.Kom (MTsN 14 Jakarta)',
     createdAt: '2026-10-12',
   },
+  {
+    id: 'mat-k8-bab4',
+    title: 'Bab 4 (Kelas 8): Sistem Komputer (Gerbang Logika CPU, Heksadesimal & Memori)',
+    category: 'Bab 4 : Sistem Komputer',
+    gradeLevel: 'Kelas 8',
+    summary:
+      'Memahami cara kerja sirkuit digital menggunakan Gerbang Logika (AND, OR, NOT, NAND, XOR), sistem pengalamatan memori menggunakan bilangan Heksadesimal (Basis 16), dan siklus instruksi CPU.',
+    keyPoints: [
+      'Gerbang AND menghasilkan 1 hanya jika semua input bernilai 1; Gerbang OR menghasilkan 1 jika minimal satu input 1.',
+      'Gerbang NOT membalikkan nilai logika (0 menjadi 1, 1 menjadi 0); XOR menghasilkan 1 jika kedua input berbeda.',
+      'Bilangan Heksadesimal (Basis 16) menggunakan angka 0-9 dan huruf A-F (A=10, B=11, C=12, D=13, E=14, F=15).',
+      'Siklus Mesin CPU: Fetch (mengambil instruksi dari RAM) -> Decode (menerjemahkan) -> Execute (menjalankan di ALU).',
+    ],
+    formulaOrLogic: '2F(16) = (2 × 16¹) + (15 × 16⁰) = 32 + 15 = 47(10)',
+    author: 'Azhary Mardhani, S.Kom (MTsN 14 Jakarta)',
+    createdAt: '2026-10-13',
+  },
+  {
+    id: 'mat-k8-bab5',
+    title: 'Bab 5 (Kelas 8): Jaringan Komputer dan Internet (Routing, BTS Seluler & Keamanan)',
+    category: 'Bab 5 : Jaringan Komputer dan Internet',
+    gradeLevel: 'Kelas 8',
+    summary:
+      'Mempelajari perbedaan jaringan lokal (LAN) dan internet (WAN), mekanisme pemilihan jalur tercepat paket data (Routing), cara kerja menara BTS seluler, dan keamanan berinternet (HTTPS/Firewall).',
+    keyPoints: [
+      'LAN mencakup area terbatas (ruang lab/gedung sekolah), sedangkan WAN/Internet mencakup jaringan global.',
+      'Routing adalah proses memilih jalur terbaik/terpendek bagi paket data untuk mencapai alamat IP tujuan.',
+      'Kekuatan sinyal ponsel dipengaruhi jarak ke menara BTS (Base Transceiver Station) dan penghalang fisik.',
+      'Protokol HTTPS mengenkripsi komunikasi antara browser dan server agar aman dari penyadapan data.',
+    ],
+    formulaOrLogic: 'Pengirim -> Pecah Paket Data -> Router (Jalur Tercepat) -> Penerima -> Gabung Paket',
+    author: 'Azhary Mardhani, S.Kom (MTsN 14 Jakarta)',
+    createdAt: '2026-10-14',
+  },
+  {
+    id: 'mat-k8-bab6',
+    title: 'Bab 6 (Kelas 8): Analisis Data (VLOOKUP/HLOOKUP, SUMIF/COUNTIF & Visualisasi)',
+    category: 'Bab 6 : Analisis Data',
+    gradeLevel: 'Kelas 8',
+    summary:
+      'Menganalisis tabel data berskala lebih besar menggunakan fungsi pencarian referensi (VLOOKUP & HLOOKUP), fungsi agregasi bersyarat (SUMIF & COUNTIF), Pivot Table, dan pemilihan grafik visualisasi.',
+    keyPoints: [
+      'VLOOKUP mencari nilai secara vertikal pada kolom pertama tabel referensi, sedangkan HLOOKUP secara horizontal.',
+      'COUNTIF menghitung jumlah data yang memenuhi satu syarat; SUMIF menjumlahkan nilai yang memenuhi syarat.',
+      'Parameter FALSE (atau 0) di akhir VLOOKUP memastikan pencarian kecocokan persis (Exact Match).',
+      'Diagram Lingkaran (Pie Chart) cocok untuk proporsi persentase, sedangkan Line Chart untuk perkembangan waktu.',
+    ],
+    formulaOrLogic: '=VLOOKUP(B2, $F$2:$H$20, 2, FALSE) | =COUNTIF(D2:D35, ">=85")',
+    author: 'Azhary Mardhani, S.Kom (MTsN 14 Jakarta)',
+    createdAt: '2026-10-15',
+  },
+  {
+    id: 'mat-k8-bab7',
+    title: 'Bab 7 (Kelas 8): Algoritma dan Pemrograman (Variabel, Percabangan, Perulangan & Robot)',
+    category: 'Bab 7 : Algoritma dan Pemrograman',
+    gradeLevel: 'Kelas 8',
+    summary:
+      'Menerapkan konsep variabel, tipe data, operator aritmatika/logika, struktur kontrol percabangan (If-Else), dan perulangan (Looping) pada pemrograman prosedural serta simulasi robot garis.',
+    keyPoints: [
+      'Variabel adalah wadah penyimpanan nilai di memori yang isinya dapat berubah selama program berjalan.',
+      'Percabangan (If - Else) mengeksekusi blok aksi berbeda tergantung apakah syarat bernilai Benar (True) atau Salah.',
+      'Perulangan (For / While / Repeat Until) menghemat baris kode untuk tugas yang berulang.',
+      'Flowchart menggunakan simbol Belah Ketupat untuk Decision (Percabangan) dan Persegi Panjang untuk Proses.',
+    ],
+    formulaOrLogic: 'FOR i = 1 TO 5 DO: Skor = Skor + 10',
+    author: 'Azhary Mardhani, S.Kom (MTsN 14 Jakarta)',
+    createdAt: '2026-10-16',
+  },
+  {
+    id: 'mat-k8-bab8',
+    title: 'Bab 8 (Kelas 8): Dampak Sosial Informatika (Media Sosial, Cek Hoaks & Cyberbullying)',
+    category: 'Bab 8 : Dampak Sosial Informatika',
+    gradeLevel: 'Kelas 8',
+    summary:
+      'Mengkaji secara kritis informasi di media sosial untuk menangkal berita bohong (Hoaks), memahami bahaya perundungan siber (Cyberbullying), serta menjaga jejak digital yang sehat dan bertanggung jawab.',
+    keyPoints: [
+      'Metode SARING sebelum SHARING: periksa sumber situs resmi, bandingkan berita, dan cek keaslian foto/video.',
+      'Echo Chamber & Filter Bubble membuat algoritma media sosial hanya menampilkan konten yang serupa dengan minat kita.',
+      'Cyberbullying berdampak serius pada kesehatan mental; tindakan tepat adalah blokir pelaku, simpan bukti, dan lapor guru/orang tua.',
+      'Phishing dan Social Engineering memanipulasi psikologis korban agar menyerahkan kode OTP atau kata sandi.',
+    ],
+    formulaOrLogic: 'Terima Informasi -> Cek Sumber & Fakta -> Verifikasi -> Baru Bagikan jika Valid',
+    author: 'Azhary Mardhani, S.Kom (MTsN 14 Jakarta)',
+    createdAt: '2026-10-17',
+  },
+  {
+    id: 'mat-k8-bab9',
+    title: 'Bab 9 (Kelas 8): Praktik Lintas Bidang (Proyek Pengembangan Game & Solusi Digital)',
+    category: 'Bab 9 : Praktik Lintas Bidang (Proyek)',
+    gradeLevel: 'Kelas 8',
+    summary:
+      'Bekerja secara kolaboratif dalam tim layaknya developer Roblox untuk menyelesaikan masalah nyata di lingkungan sekolah melalui tahapan rekayasa perangkat lunak (analisis, desain, koding, testing, dan rilis).',
+    keyPoints: [
+      'Peran dalam Tim Proyek: Project Manager, UI/UX Designer, Game/App Programmer, dan Quality Assurance (Tester).',
+      'Desain Antarmuka (Wireframe/Mockup) dibuat terlebih dahulu agar alur penggunaan aplikasi jelas dan ramah pengguna.',
+      'Pengujian (Debugging & Testing) memastikan aplikasi bebas dari bug sebelum dipresentasikan.',
+      'Laporan akhir proyek mendokumentasikan latar belakang masalah, rancangan algoritma, hasil uji coba, dan refleksi tim.',
+    ],
+    formulaOrLogic: 'Observasi Masalah Sekolah -> Desain Mockup -> Koding Kolaboratif -> Uji Coba & Pameran Karya',
+    author: 'Azhary Mardhani, S.Kom (MTsN 14 Jakarta)',
+    createdAt: '2026-10-18',
+  },
 ];
 
-function createCohort(
-  correctKey: OptionKey,
-  upperAcc: number,
-  lowerAcc: number,
-  popularWrong: OptionKey,
-  secondWrong: OptionKey
-): HistoricalCohortAttempt[] {
-  const attempts: HistoricalCohortAttempt[] = [];
-  const allOptions: OptionKey[] = ['A', 'B', 'C', 'D'];
-  const thirdWrong =
-    allOptions.find((o) => o !== correctKey && o !== popularWrong && o !== secondWrong) || 'D';
-
-  // 10 Upper group students + 10 Lower group students from MTsN 14 Jakarta
-  for (let i = 0; i < 10; i++) {
-    const isCorrect = i < Math.round(upperAcc * 10);
-    const chosen: OptionKey = isCorrect
-      ? correctKey
-      : i % 2 === 0
-      ? popularWrong
-      : secondWrong;
-    attempts.push({
-      studentId: `upper-${i + 1}`,
-      studentName: `Siswa Atas ${i + 1}`,
-      totalScoreRankPercentile: 0.85 - i * 0.03,
-      selectedOption: chosen,
-      isCorrect,
-      responseTimeMs: 4200 + i * 310,
-    });
-  }
-
-  for (let i = 0; i < 10; i++) {
-    const isCorrect = i < Math.round(lowerAcc * 10);
-    const chosen: OptionKey = isCorrect
-      ? correctKey
-      : i % 3 === 0
-      ? popularWrong
-      : i % 3 === 1
-      ? secondWrong
-      : thirdWrong;
-    attempts.push({
-      studentId: `lower-${i + 1}`,
-      studentName: `Siswa Bawah ${i + 1}`,
-      totalScoreRankPercentile: 0.45 - i * 0.04,
-      selectedOption: chosen,
-      isCorrect,
-      responseTimeMs: 6500 + i * 420,
-    });
-  }
-  return attempts;
-}
-
 export const INITIAL_QUESTIONS: InformaticsQuestion[] = [
-  {
-    id: 'q-01',
-    materialId: 'mat-bk-01',
-    category: 'Berpikir Komputasional',
-    gradeLevel: 'Kelas 7',
-    cognitiveLevel: 'C3 - Menerapkan',
-    question:
-      'OSIS MTsN 14 Jakarta ingin mengadakan lomba Class Meeting. Mereka membagi kepanitiaan menjadi divisi acara, perlengkapan, dokumentasi, dan konsumsi agar tugas lebih ringan. Pilar Berpikir Komputasional yang diterapkan adalah...',
-    options: {
-      A: 'Abstraksi (Penyaringan fokus)',
-      B: 'Dekomposisi (Pemecahan masalah)',
-      C: 'Pengenalan Pola (Pattern Recognition)',
-      D: 'Kompilasi Kode (Code Compilation)',
-    },
-    correctAnswer: 'B',
-    explanation:
-      'Dekomposisi adalah teknik memecah masalah atau proyek besar (Class Meeting) menjadi bagian-bagian yang lebih kecil (divisi kepanitiaan) agar lebih mudah dikelola.',
-    points: 150,
-    timeLimitSec: 25,
-    baselineCohort: createCohort('B', 0.9, 0.5, 'A', 'C'),
-  },
-  {
-    id: 'q-02',
-    materialId: 'mat-bk-01',
-    category: 'Berpikir Komputasional',
-    gradeLevel: 'Kelas 7',
-    cognitiveLevel: 'C4 - Menganalisis',
-    question:
-      'Saat menggunakan peta digital menuju MTs Negeri 14 Jakarta, aplikasi hanya menampilkan jalur jalan raya dan estimasi waktu tempuh tanpa menampilkan warna atap rumah warga. Prinsip ini disebut...',
-    options: {
-      A: 'Abstraksi',
-      B: 'Dekomposisi',
-      C: 'Iterasi Rekursif',
-      D: 'Enkripsi Data',
-    },
-    correctAnswer: 'A',
-    explanation:
-      'Abstraksi menyaring informasi yang relevan (jalur jalan & waktu tempuh) dan mengabaikan detail yang tidak diperlukan (warna atap rumah).',
-    points: 150,
-    timeLimitSec: 25,
-    baselineCohort: createCohort('A', 0.8, 0.4, 'B', 'C'),
-  },
-  {
-    id: 'q-03',
-    materialId: 'mat-sk-02',
-    category: 'Sistem Komputer',
-    gradeLevel: 'Kelas 8',
-    cognitiveLevel: 'C3 - Menerapkan',
-    question:
-      'Robot sensor di Lab Informatika mengirimkan sinyal biner 11010(2). Berapakah nilai bilangan desimal dari kode biner tersebut?',
-    options: {
-      A: '22',
-      B: '24',
-      C: '26',
-      D: '28',
-    },
-    correctAnswer: 'C',
-    explanation:
-      '11010(2) = (1×16) + (1×8) + (0×4) + (1×2) + (0×1) = 16 + 8 + 0 + 2 + 0 = 26(10).',
-    points: 200,
-    timeLimitSec: 30,
-    baselineCohort: createCohort('C', 0.8, 0.3, 'B', 'D'),
-  },
-  {
-    id: 'q-04',
-    materialId: 'mat-sk-02',
-    category: 'Sistem Komputer',
-    gradeLevel: 'Kelas 8',
-    cognitiveLevel: 'C4 - Menganalisis',
-    question:
-      'Gerbang logika keamanan server akan membuka akses (Output = 1) jika: (Input A = 1 AND Input B = 0) OR (Input C = 1). Jika A=1, B=1, dan C=0, maka Output server adalah...',
-    options: {
-      A: '1 (Akses Terbuka)',
-      B: '0 (Akses Ditolak)',
-      C: 'Error Overflow',
-      D: 'Reset Otomatis',
-    },
-    correctAnswer: 'B',
-    explanation:
-      '(A=1 AND B=0) bernilai False (0) karena B=1. Kemudian 0 OR (C=0) menghasilkan 0 (Akses Ditolak).',
-    points: 200,
-    timeLimitSec: 30,
-    baselineCohort: createCohort('B', 0.7, 0.3, 'A', 'C'),
-  },
-  {
-    id: 'q-05',
-    materialId: 'mat-sk-02',
-    category: 'Sistem Komputer',
-    gradeLevel: 'Kelas 7',
-    cognitiveLevel: 'C2 - Memahami',
-    question:
-      'Bagian dari prosesor (CPU) yang bertugas khusus melakukan perhitungan aritmatika (penjumlahan, pengurangan) dan perbandingan logika adalah...',
-    options: {
-      A: 'Control Unit (CU)',
-      B: 'Arithmetic Logic Unit (ALU)',
-      C: 'Random Access Memory (RAM)',
-      D: 'Solid State Drive (SSD)',
-    },
-    correctAnswer: 'B',
-    explanation:
-      'ALU (Arithmetic Logic Unit) adalah komponen CPU yang mengeksekusi operasi perhitungan matematika dan keputusan logika.',
-    points: 150,
-    timeLimitSec: 22,
-    baselineCohort: createCohort('B', 0.9, 0.5, 'A', 'C'),
-  },
-  {
-    id: 'q-06',
-    materialId: 'mat-jk-03',
-    category: 'Jaringan Komputer & Internet',
-    gradeLevel: 'Kelas 8',
-    cognitiveLevel: 'C4 - Menganalisis',
-    question:
-      'Lab Komputer MTsN 14 Jakarta menghubungkan 30 PC ke satu Switch pusat. Ketika kabel jaringan pada PC nomor 12 terputus, 29 PC lainnya tetap bisa mengakses internet. Topologi yang digunakan adalah...',
-    options: {
-      A: 'Topologi Bus',
-      B: 'Topologi Ring (Cincin)',
-      C: 'Topologi Star (Bintang)',
-      D: 'Topologi Peer-to-Peer',
-    },
-    correctAnswer: 'C',
-    explanation:
-      'Pada Topologi Star, setiap klien terhubung langsung ke Switch pusat secara independen, sehingga kerusakan satu kabel klien tidak melumpuhkan jaringan lain.',
-    points: 150,
-    timeLimitSec: 25,
-    baselineCohort: createCohort('C', 0.9, 0.4, 'A', 'B'),
-  },
-  {
-    id: 'q-07',
-    materialId: 'mat-jk-03',
-    category: 'Jaringan Komputer & Internet',
-    gradeLevel: 'Kelas 8',
-    cognitiveLevel: 'C2 - Memahami',
-    question:
-      'Saat siswa mengetik alamat "mtsn14-jakarta.sch.id" pada browser, layanan jaringan yang bertugas menerjemahkan nama domain tersebut menjadi alamat IP numerik server adalah...',
-    options: {
-      A: 'DHCP Server',
-      B: 'DNS (Domain Name System)',
-      C: 'FTP (File Transfer Protocol)',
-      D: 'MAC Address Filter',
-    },
-    correctAnswer: 'B',
-    explanation:
-      'DNS berfungsi sebagai buku telepon internet yang menerjemahkan nama domain yang mudah diingat manusia menjadi IP Address komputer.',
-    points: 150,
-    timeLimitSec: 22,
-    baselineCohort: createCohort('B', 0.8, 0.4, 'A', 'C'),
-  },
-  {
-    id: 'q-08',
-    materialId: 'mat-ap-04',
-    category: 'Algoritma & Pemrograman',
-    gradeLevel: 'Kelas 9',
-    cognitiveLevel: 'C4 - Menganalisis',
-    question:
-      'Perhatikan pseudocode berikut: X = 5; FOR i = 1 TO 3 DO (X = X + (i * 2)). Berapakah nilai variabel X setelah perulangan selesai dijalankan?',
-    options: {
-      A: '11',
-      B: '15',
-      C: '17',
-      D: '21',
-    },
-    correctAnswer: 'C',
-    explanation:
-      'Awal X = 5. Iterasi i=1: X = 5 + 2 = 7. Iterasi i=2: X = 7 + 4 = 11. Iterasi i=3: X = 11 + 6 = 17.',
-    points: 200,
-    timeLimitSec: 30,
-    baselineCohort: createCohort('C', 0.7, 0.2, 'B', 'A'),
-  },
-  {
-    id: 'q-09',
-    materialId: 'mat-ap-04',
-    category: 'Algoritma & Pemrograman',
-    gradeLevel: 'Kelas 8',
-    cognitiveLevel: 'C2 - Memahami',
-    question:
-      'Dalam pembuatan diagram alir (Flowchart) program kelulusan nilai ujian, simbol geometri yang tepat untuk menguji kondisi "Apakah Nilai >= 78?" adalah...',
-    options: {
-      A: 'Persegi Panjang (Process)',
-      B: 'Belah Ketupat (Decision)',
-      C: 'Jajar Genjang (Input/Output)',
-      D: 'Kapsul Oval (Terminator)',
-    },
-    correctAnswer: 'B',
-    explanation:
-      'Simbol Belah Ketupat (Diamond / Decision) digunakan untuk pengujian kondisi percabangan yang menghasilkan jalur keluar Ya (True) atau Tidak (False).',
-    points: 150,
-    timeLimitSec: 22,
-    baselineCohort: createCohort('B', 0.85, 0.45, 'A', 'C'),
-  },
-  {
-    id: 'q-10',
-    materialId: 'mat-ad-05',
-    category: 'Analisis Data',
-    gradeLevel: 'Kelas 8',
-    cognitiveLevel: 'C3 - Menerapkan',
-    question:
-      'Pak Azhary ingin menghitung banyaknya siswa kelas 8A yang memperoleh nilai Informatika di atas atau sama dengan 85 pada rentang sel C2 sampai C32. Rumus spreadsheet yang tepat adalah...',
-    options: {
-      A: '=SUM(C2:C32, ">=85")',
-      B: '=AVERAGE(C2:C32)',
-      C: '=COUNTIF(C2:C32, ">=85")',
-      D: '=MAX(C2:C32)',
-    },
-    correctAnswer: 'C',
-    explanation:
-      'Fungsi COUNTIF(range, criteria) menghitung jumlah sel dalam rentang tertentu yang memenuhi syarat atau kriteria yang ditentukan.',
-    points: 175,
-    timeLimitSec: 25,
-    baselineCohort: createCohort('C', 0.8, 0.35, 'A', 'B'),
-  },
-  {
-    id: 'q-11',
-    materialId: 'mat-ds-06',
-    category: 'Dampak Sosial & Keamanan Siber',
-    gradeLevel: 'Kelas 9',
-    cognitiveLevel: 'C3 - Menerapkan',
-    question:
-      'Sebuah pesan rahasia dienkripsi menggunakan Caesar Cipher dengan kunci geser +3 (A menjadi D, B menjadi E). Jika kata aslinya adalah "DATA", maka teks sandinya (Ciphertext) adalah...',
-    options: {
-      A: 'GDWD',
-      B: 'FCFC',
-      C: 'AXQX',
-      D: 'HEHE',
-    },
-    correctAnswer: 'A',
-    explanation:
-      'Geser +3 huruf alfabet: D -> G, A -> D, T -> W, A -> D. Maka "DATA" terenkripsi menjadi "GDWD".',
-    points: 200,
-    timeLimitSec: 28,
-    baselineCohort: createCohort('A', 0.8, 0.3, 'B', 'C'),
-  },
-  {
-    id: 'q-12',
-    materialId: 'mat-ds-06',
-    category: 'Dampak Sosial & Keamanan Siber',
-    gradeLevel: 'Kelas 9',
-    cognitiveLevel: 'C5 - Mengevaluasi',
-    question:
-      'Seorang siswa menerima pesan berantai berisi tautan "bagi-bagi kuota belajar gratis" dengan alamat web mencurigakan yang meminta akun email beserta password-nya. Tindakan paling aman adalah...',
-    options: {
-      A: 'Langsung mengisi data karena kuota terbatas',
-      B: 'Membagikan ke grup kelas agar teman ikut mencoba',
-      C: 'Mengabaikan tautan karena merupakan serangan Phishing dan melaporkannya',
-      D: 'Menggunakan password milik teman untuk mencoba dulu',
-    },
-    correctAnswer: 'C',
-    explanation:
-      'Tautan palsu yang memancing pengguna menyerahkan kredensial rahasia adalah serangan Social Engineering / Phishing dan harus diabaikan serta dilaporkan.',
-    points: 150,
-    timeLimitSec: 22,
-    baselineCohort: createCohort('C', 0.95, 0.6, 'A', 'D'),
-  },
+  ...QUESTIONS_KELAS_7,
+  ...QUESTIONS_KELAS_8,
 ];
 
 /**
@@ -698,3 +661,26 @@ export function computeItemAnalysis(
     rejectedCount,
   };
 }
+
+const INITIAL_QUESTIONS_BY_ID = new Map<string, InformaticsQuestion>(
+  INITIAL_QUESTIONS.map((q) => [q.id, q])
+);
+
+export function syncQuestionsWithInitialConciseOptions(
+  savedQuestions: InformaticsQuestion[]
+): InformaticsQuestion[] {
+  if (!Array.isArray(savedQuestions) || savedQuestions.length === 0) {
+    return INITIAL_QUESTIONS;
+  }
+  return savedQuestions.map((q) => {
+    const builtIn = INITIAL_QUESTIONS_BY_ID.get(q.id);
+    if (!builtIn) return q;
+    return {
+      ...q,
+      options: builtIn.options,
+      correctAnswer: builtIn.correctAnswer,
+      explanation: builtIn.explanation,
+    };
+  });
+}
+

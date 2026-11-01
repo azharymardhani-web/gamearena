@@ -226,6 +226,7 @@ interface CyberArenaCanvasProps {
   localPlayerRole: 'TEACHER' | 'STUDENT';
   players: MapPlayerEntity[];
   materials: InformaticsMaterial[];
+  questions?: InformaticsQuestion[];
   currentQuestion: InformaticsQuestion | null;
   teleportCommand?: { x: number; y: number; seq: number } | null;
   localChatBubble?: { text: string; timestamp: number } | null;
@@ -659,7 +660,8 @@ function drawOverheadTag(
   subtitle: string,
   accentColor: string,
   isTeacher = false,
-  chatBubbleText = ''
+  chatBubbleText = '',
+  isCrownRank1 = false
 ) {
   const ctx = canvas.getContext('2d')!;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -693,21 +695,26 @@ function drawOverheadTag(
   // 2. Overhead Nameplate Badge (Bottom half of canvas: y = 108..212)
   const tagY = 108;
   const tagH = 104;
-  ctx.fillStyle = isTeacher ? 'rgba(24, 24, 27, 0.95)' : 'rgba(15, 23, 42, 0.92)';
-  ctx.strokeStyle = accentColor;
-  ctx.lineWidth = 6;
+  ctx.fillStyle = isCrownRank1
+    ? 'rgba(69, 26, 3, 0.95)'
+    : isTeacher
+    ? 'rgba(24, 24, 27, 0.95)'
+    : 'rgba(15, 23, 42, 0.92)';
+  ctx.strokeStyle = isCrownRank1 ? '#f59e0b' : accentColor;
+  ctx.lineWidth = isCrownRank1 ? 8 : 6;
   ctx.beginPath();
   ctx.roundRect(10, tagY, canvas.width - 20, tagH, 24);
   ctx.fill();
   ctx.stroke();
 
-  ctx.fillStyle = '#ffffff';
+  ctx.fillStyle = isCrownRank1 ? '#fef08a' : '#ffffff';
   ctx.font = '800 29px "Outfit", sans-serif';
   ctx.textAlign = 'center';
-  const cleanTitle = title.length > 22 ? title.slice(0, 20) + '..' : title;
+  const displayTitle = isCrownRank1 ? `👑 ${title}` : title;
+  const cleanTitle = displayTitle.length > 22 ? displayTitle.slice(0, 20) + '..' : displayTitle;
   ctx.fillText(cleanTitle, canvas.width / 2, tagY + 46);
 
-  ctx.fillStyle = accentColor;
+  ctx.fillStyle = isCrownRank1 ? '#facc15' : accentColor;
   ctx.font = '700 21px "JetBrains Mono", monospace';
   ctx.fillText(subtitle, canvas.width / 2, tagY + 82);
 }
@@ -724,6 +731,7 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
   localPlayerRole,
   players,
   materials,
+  questions = [],
   currentQuestion,
   teleportCommand,
   localChatBubble,
@@ -756,6 +764,7 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
     localPlayerRole,
     players,
     materials,
+    questions,
     currentQuestion,
     teleportCommand,
     localChatBubble,
@@ -781,6 +790,7 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
       localPlayerRole,
       players,
       materials,
+      questions,
       currentQuestion,
       teleportCommand,
       localChatBubble,
@@ -804,6 +814,7 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
     localPlayerRole,
     players,
     materials,
+    questions,
     currentQuestion,
     teleportCommand,
     localChatBubble,
@@ -976,8 +987,14 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
     halimAirlinerGroup.rotation.y = 0.22;
     scene.add(halimAirlinerGroup);
 
-    // Build 6 Iconic 3D School & City Buildings + Teacher NPC Mission Markers
+    // Build 6 Iconic 3D School & City Buildings + Teacher NPC Mission Markers & 3D Active Beacons
     const teacherMarkerMeshes: THREE.Mesh[] = [];
+    const activeBuildingBeacons: {
+      index: number;
+      group: THREE.Group;
+      lightBeam: THREE.Mesh;
+      emblem: THREE.Mesh;
+    }[] = [];
 
     // 12-Part Articulated Humanoid Builder (Used for both Students and Teacher NPCs!)
     const buildHumanoidCharacter = (
@@ -1166,6 +1183,41 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
         hairTop.position.set(0, 4.32, -0.04);
         root.add(hairTop);
       }
+
+      // 3D Golden Crown for Rank #1 Leaderboard Champion
+      const crownGroup = new THREE.Group();
+      crownGroup.name = 'crownGroup';
+      crownGroup.position.set(0, 4.8, 0);
+
+      const crownRing = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.55, 0.42, 0.38, 10),
+        new THREE.MeshStandardMaterial({
+          color: 0xf59e0b,
+          metalness: 0.9,
+          roughness: 0.15,
+          emissive: 0xb45309,
+          emissiveIntensity: 0.4,
+        })
+      );
+      crownGroup.add(crownRing);
+
+      for (let s = 0; s < 5; s++) {
+        const sa = (s / 5) * Math.PI * 2;
+        const spike = new THREE.Mesh(
+          new THREE.ConeGeometry(0.14, 0.48, 4),
+          new THREE.MeshStandardMaterial({
+            color: 0xfef08a,
+            metalness: 0.95,
+            roughness: 0.1,
+            emissive: 0xfacc15,
+            emissiveIntensity: 0.3,
+          })
+        );
+        spike.position.set(Math.cos(sa) * 0.48, 0.38, Math.sin(sa) * 0.48);
+        crownGroup.add(spike);
+      }
+      crownGroup.visible = false;
+      root.add(crownGroup);
 
       // 9. Overhead Nameplate + Roblox Speech Bubble Sprite
       const nameCanvas = document.createElement('canvas');
@@ -1586,6 +1638,55 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
       signSprite.position.set(0, post.index === 2 ? bHeight + 11.5 : bHeight + 6.8, 0);
       bGroup.add(signSprite);
 
+      // 3D Visual Beacon Light Beam & Active Hologram Emblem for Active Chapters
+      const beaconGroup = new THREE.Group();
+      beaconGroup.position.set(0, post.index === 2 ? bHeight + 11.5 : bHeight + 6.8, 0);
+
+      const lightBeamMesh = new THREE.Mesh(
+        new THREE.CylinderGeometry(2.4, 3.6, 50, 24, 1, true),
+        new THREE.MeshBasicMaterial({
+          color: 0x38bdf8,
+          transparent: true,
+          opacity: 0.38,
+          side: THREE.DoubleSide,
+          depthWrite: false,
+        })
+      );
+      lightBeamMesh.position.y = 25;
+      beaconGroup.add(lightBeamMesh);
+
+      const lightBeamCore = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.7, 1.0, 55, 16, 1, true),
+        new THREE.MeshBasicMaterial({
+          color: 0xffffff,
+          transparent: true,
+          opacity: 0.7,
+          side: THREE.DoubleSide,
+          depthWrite: false,
+        })
+      );
+      lightBeamCore.position.y = 27.5;
+      beaconGroup.add(lightBeamCore);
+
+      const emblemMesh = new THREE.Mesh(
+        new THREE.OctahedronGeometry(2.4, 0),
+        new THREE.MeshBasicMaterial({
+          color: 0xf59e0b,
+          transparent: true,
+          opacity: 0.9,
+        })
+      );
+      emblemMesh.position.y = 9.5;
+      beaconGroup.add(emblemMesh);
+
+      bGroup.add(beaconGroup);
+      activeBuildingBeacons.push({
+        index: post.index,
+        group: beaconGroup,
+        lightBeam: lightBeamMesh,
+        emblem: emblemMesh,
+      });
+
       scene.add(bGroup);
 
       // Teacher NPC (Pak Azhary Mardhani, S.Kom) standing on the front plaza facing the walkway!
@@ -1943,6 +2044,33 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
         const s = 1 + Math.sin(elapsed * 3 + idx) * 0.06;
         cyl.scale.set(s, 1, s);
       });
+
+      // Animate 3D Active Chapter Building Beacons & Glowing Beams
+      const activeQuestionsPool = currentProps.questions || [];
+      const activeCatSet = new Set(activeQuestionsPool.map((q: InformaticsQuestion) => q.category));
+      const stationKeywordsMap: Record<number, string[]> = {
+        0: ['Bab 1', 'Bab 3'],
+        1: ['Bab 4', 'Bab 7'],
+        2: ['Bab 8'],
+        3: ['Bab 2'],
+        4: ['Bab 6', 'Bab 9'],
+        5: ['Bab 5'],
+      };
+
+      activeBuildingBeacons.forEach((beacon) => {
+        const kws = stationKeywordsMap[beacon.index] || [];
+        const isActive = kws.some((kw) =>
+          Array.from(activeCatSet).some((cat) => String(cat).includes(kw))
+        );
+        beacon.group.visible = isActive;
+        if (isActive) {
+          beacon.emblem.rotation.y = elapsed * 1.6;
+          beacon.emblem.position.y = 9.5 + Math.sin(elapsed * 3.5 + beacon.index) * 0.45;
+          (beacon.lightBeam.material as THREE.MeshBasicMaterial).opacity =
+            0.32 + Math.sin(elapsed * 2.8 + beacon.index) * 0.15;
+        }
+      });
+
       const planeCycle = ((elapsed * 6.5) % 180) - 90;
       halimAirlinerGroup.position.set(planeCycle, 40 + (planeCycle + 90) * 0.08, -58);
 
@@ -2174,6 +2302,17 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
       const localMp = localRec?.missionPoints ?? 100;
       const localScore = localRec?.score ?? 0;
 
+      // Determine Rank 1 Champion player for Golden Crown rendering
+      let rank1PlayerId: string | null = null;
+      let highestRankScore = -1;
+      for (const p of currentProps.players) {
+        const pScore = p.score || 0;
+        if (pScore > highestRankScore && pScore > 0) {
+          highestRankScore = pScore;
+          rank1PlayerId = p.id;
+        }
+      }
+
       if (currentProps.joinedRoom) {
         activeIds.add(currentProps.localPlayerId);
         const preset = getPresetById(currentProps.localPlayerPreset);
@@ -2215,7 +2354,8 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
             ? localBubbleSource.text
             : '';
 
-        const sig = `${currentProps.localPlayerName}|${currentProps.localPlayerClass}|${localMp}|${localScore}|${activeLocalChat}`;
+        const isLocalRank1 = rank1PlayerId === currentProps.localPlayerId;
+        const sig = `${currentProps.localPlayerName}|${currentProps.localPlayerClass}|${localMp}|${localScore}|${activeLocalChat}|${isLocalRank1}`;
         if (localRig.lastSignature !== sig) {
           localRig.lastSignature = sig;
           drawOverheadTag(
@@ -2224,7 +2364,8 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
             `${currentProps.localPlayerClass} · ${localMp} MP · $${localScore}`,
             '#38bdf8',
             false,
-            activeLocalChat
+            activeLocalChat,
+            isLocalRank1
           );
           localRig.nameTexture.needsUpdate = true;
         }
@@ -2343,11 +2484,32 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
             ? rp.lastChatText
             : '';
 
-        const sig = `${rp.name}|${rp.studentClass}|${rp.score}|${isOnlineHuman}|${activePeerChat}`;
+        const isPeerRank1 = rank1PlayerId === rp.id;
+        const sig = `${rp.name}|${rp.studentClass}|${rp.score}|${isOnlineHuman}|${activePeerChat}|${isPeerRank1}`;
         if (rig.lastSignature !== sig) {
           rig.lastSignature = sig;
-          drawOverheadTag(rig.nameCanvas, rp.name, subLabel, badgeColor, false, activePeerChat);
+          drawOverheadTag(
+            rig.nameCanvas,
+            rp.name,
+            subLabel,
+            badgeColor,
+            false,
+            activePeerChat,
+            isPeerRank1
+          );
           rig.nameTexture.needsUpdate = true;
+        }
+      }
+
+      // Update 3D Golden Crown visibility and spin for all rigs
+      for (const [id, rig] of playerRigs.entries()) {
+        const isChampion = rank1PlayerId !== null && id === rank1PlayerId;
+        const crownObj = rig.group.getObjectByName('crownGroup');
+        if (crownObj) {
+          crownObj.visible = isChampion;
+          if (isChampion) {
+            crownObj.rotation.y = elapsed * 2.5;
+          }
         }
       }
 

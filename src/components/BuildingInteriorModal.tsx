@@ -23,16 +23,21 @@ import {
   Radio,
   BookMarked,
   Volume2,
+  Lock,
 } from 'lucide-react';
 
 interface BuildingInteriorModalProps {
   building: TeacherPostLocation;
+  isBuildingActive?: boolean;
+  isTeacher?: boolean;
   onClose: () => void;
   onStartTeacherQuiz: () => void;
 }
 
 export const BuildingInteriorModal: React.FC<BuildingInteriorModalProps> = ({
   building,
+  isBuildingActive = true,
+  isTeacher = false,
   onClose,
   onStartTeacherQuiz,
 }) => {
@@ -245,14 +250,14 @@ export const BuildingInteriorModal: React.FC<BuildingInteriorModalProps> = ({
         return {
           themeColor: 'rose',
           badgeText: 'RUANG BELAJAR & LITERASI DIGITAL',
-          headerTitle: 'Gedung Kelas 7, 8, 9 & Perpustakaan',
-          headerSubtitle: 'Pusat Pembelajaran Ruang Kelas & Koleksi Buku Digital',
+          headerTitle: 'Gedung Kelas 7 (7A–7G), Kelas 8 (8A–8H), Kelas 9 (9A–9E) & Perpustakaan',
+          headerSubtitle: 'Pusat Pembelajaran 20 Rombel Ruang Kelas & Koleksi Buku Digital',
           rooms: [
             {
-              name: 'Ruang Kelas Digital 8A',
+              name: 'Ruang Kelas Digital (7A–7G, 8A–8H, 9A–9E)',
               icon: BookOpen,
               bgStyle: 'from-rose-950/80 via-slate-900 to-pink-900/40',
-              description: 'Ruang kelas ber-AC dengan susunan meja fleksibel untuk pembelajaran kolaboratif.',
+              description: 'Gedung ruang kelas ber-AC untuk Kelas 7A s.d. 7G, Kelas 8A s.d. 8H, dan Kelas 9A s.d. 9E dengan fasilitas pembelajaran kolaboratif.',
               items: [
                 {
                   id: 'g3-1',
@@ -558,36 +563,94 @@ export const BuildingInteriorModal: React.FC<BuildingInteriorModalProps> = ({
             </div>
           </div>
 
-          {/* Pos Misi Guru Banner inside the Building */}
-          <div className="p-5 rounded-2xl bg-gradient-to-r from-emerald-900/40 via-slate-900 to-amber-950/30 border border-amber-500/40 flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div className="flex items-center gap-4">
-              <div className="p-3 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/30 text-2xl font-bold">
-                🖥️
+          {/* Pos Misi Guru & Kolaborasi Bab Kelas 7-8 Banner inside the Building */}
+          <div className="p-5 rounded-2xl bg-gradient-to-r from-emerald-900/40 via-slate-900 to-amber-950/30 border border-amber-500/40 flex flex-col gap-4">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <div className="p-3 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/30 text-2xl font-bold shrink-0">
+                  🖥️
+                </div>
+                <div>
+                  <span className="text-[10px] font-mono font-extrabold uppercase tracking-wider text-amber-400">
+                    ZONA MISI ROBLOX & TERMINAL CBT INFORMATIKA
+                  </span>
+                  <h4 className="text-base font-bold text-white">
+                    Lembar Ujian CBT: {building.title}
+                  </h4>
+                  <p className="text-xs text-slate-300 mt-0.5">
+                    Selesaikan misi soal CBT sesuai Bab di gedung ini untuk menaikkan Level Developer Roblox-mu!
+                  </p>
+                </div>
               </div>
-              <div>
-                <span className="text-[10px] font-mono font-extrabold uppercase tracking-wider text-amber-400">
-                  TERMINAL CBT ASESMEN MANDIRI INFORMATIKA
-                </span>
-                <h4 className="text-base font-bold text-white">
-                  Lembar Ujian CBT: {building.title}
-                </h4>
-                <p className="text-xs text-slate-300 mt-0.5">
-                  Kerjakan soal Computer-Based Test (CBT) Kurikulum Merdeka dari Pak Azhary Mardhani, S.Kom untuk menguji kemampuanmu secara mandiri!
-                </p>
-              </div>
+
+              {isTeacher || isBuildingActive ? (
+                <button
+                  onClick={() => {
+                    soundEngine.playClick();
+                    onClose();
+                    onStartTeacherQuiz();
+                  }}
+                  className="px-5 py-3 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs font-mono tracking-wider uppercase transition-all shadow-lg shadow-amber-950/50 flex items-center gap-2 shrink-0 border-2 border-amber-200"
+                >
+                  <span>KERJAKAN MISI CBT BAB INI</span>
+                  <Sparkles className="w-4 h-4" />
+                </button>
+              ) : (
+                <button
+                  onClick={() => {
+                    soundEngine.playWrongAnswer();
+                    setActiveItemToast('🛑 MISI CBT BAB GEDUNG INI TIDAK AKTIF! Silakan menuju gedung yang aktif sesuai petunjuk HUD!');
+                  }}
+                  className="px-5 py-3 rounded-xl bg-rose-950/90 text-rose-300 font-extrabold text-xs font-mono tracking-wider uppercase transition-all flex items-center gap-2 shrink-0 border-2 border-rose-700 shadow-md"
+                >
+                  <span>🔒 MISI CBT TIDAK AKTIF DI GEDUNG INI</span>
+                  <Lock className="w-4 h-4 text-rose-400" />
+                </button>
+              )}
             </div>
 
-            <button
-              onClick={() => {
-                soundEngine.playClick();
-                onClose();
-                onStartTeacherQuiz();
-              }}
-              className="px-5 py-3 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs font-mono tracking-wider uppercase transition-all shadow-lg shadow-amber-950/50 flex items-center gap-2 shrink-0 border-2 border-amber-200"
-            >
-              <span>BUKA LEMBAR UJIAN CBT</span>
-              <Sparkles className="w-4 h-4" />
-            </button>
+            {/* Peta Kolaborasi Bab Kelas 7 & Kelas 8 di Gedung Ini */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-2 border-t border-slate-800/80 text-xs">
+              <div className="p-3 rounded-xl bg-slate-950/80 border border-emerald-500/30">
+                <span className="text-[10px] font-mono font-bold uppercase text-emerald-400 block">
+                  🎯 Misi Kurikulum Kelas 7 (7A – 7G):
+                </span>
+                <span className="font-semibold text-slate-100 mt-0.5 block">
+                  {building.index === 0 &&
+                    'Bab 1 (Informatika & Keterampilan Generik) & Bab 3 (Teknologi Informasi & Komunikasi)'}
+                  {building.index === 1 &&
+                    'Bab 4 (Sistem Komputer) & Bab 7 (Algoritma & Pemrograman)'}
+                  {building.index === 2 &&
+                    'Bab 8 (Dampak Sosial Informatika & Privasi Data)'}
+                  {building.index === 3 &&
+                    'Bab 2 (Berpikir Komputasional: Algoritma, Optimasi, List & Representasi)'}
+                  {building.index === 4 &&
+                    'Bab 6 (Analisis Data) & Bab 9 (Praktika Lintas Bidang Informatika)'}
+                  {building.index === 5 &&
+                    'Bab 5 (Jaringan Komputer & Internet: Wi-Fi, Tethering & Caesar Cipher)'}
+                </span>
+              </div>
+
+              <div className="p-3 rounded-xl bg-slate-950/80 border border-sky-500/30">
+                <span className="text-[10px] font-mono font-bold uppercase text-sky-400 block">
+                  🚀 Misi Kurikulum Kelas 8 (8A – 8H):
+                </span>
+                <span className="font-semibold text-slate-100 mt-0.5 block">
+                  {building.index === 0 &&
+                    'Bab 1 (Informatika & Pembelajarannya) & Bab 3 (Teknologi Informasi & Komunikasi)'}
+                  {building.index === 1 &&
+                    'Bab 4 (Sistem Komputer: Gerbang Logika) & Bab 7 (Algoritma & Pemrograman)'}
+                  {building.index === 2 &&
+                    'Bab 8 (Dampak Sosial Informatika: Cek Hoaks & Anti-Cyberbullying)'}
+                  {building.index === 3 &&
+                    'Bab 2 (Berpikir Komputasional: Fungsi, Himpunan, Stack & Queue)'}
+                  {building.index === 4 &&
+                    'Bab 6 (Analisis Data: VLOOKUP/COUNTIF) & Bab 9 (Praktik Lintas Bidang Proyek)'}
+                  {building.index === 5 &&
+                    'Bab 5 (Jaringan Komputer & Internet: Routing, BTS & Keamanan HTTPS)'}
+                </span>
+              </div>
+            </div>
           </div>
 
         </div>

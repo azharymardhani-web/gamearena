@@ -32,6 +32,7 @@ interface ItemAnalysisViewProps {
   onPlayAgain: () => void;
   onBackToMapLobby: () => void;
   onOpenMaterialManager: () => void;
+  onResetLeaderboard?: () => void;
 }
 
 type ReportTab = 'RINGKASAN' | 'PEMBAHASAN' | 'PERINGKAT';
@@ -49,9 +50,12 @@ export const ItemAnalysisView: React.FC<ItemAnalysisViewProps> = ({
   onPlayAgain,
   onBackToMapLobby,
   onOpenMaterialManager,
+  onResetLeaderboard,
 }) => {
   const [activeTab, setActiveTab] = useState<ReportTab>('RINGKASAN');
   const [questionFilter, setQuestionFilter] = useState<QuestionFilter>('ALL');
+  const [selectedClassFilter, setSelectedClassFilter] = useState<string>('ALL');
+  const [showResetConfirm, setShowResetConfirm] = useState<boolean>(false);
 
   const analysis = useMemo(
     () => computeItemAnalysis(questions, sessionAnswers, true),
@@ -200,8 +204,12 @@ export const ItemAnalysisView: React.FC<ItemAnalysisViewProps> = ({
 
   // Daftar peringkat siswa di kelas
   const sortedClassPlayers = useMemo(() => {
-    return [...players].sort((a, b) => b.score - a.score);
-  }, [players]);
+    const filtered =
+      selectedClassFilter === 'ALL'
+        ? players
+        : players.filter((p) => p.studentClass === selectedClassFilter);
+    return [...filtered].sort((a, b) => b.score - a.score);
+  }, [players, selectedClassFilter]);
 
   // Rata-rata persentase jawaban benar kelas secara keseluruhan
   const classAverageScore = useMemo(() => {
@@ -316,11 +324,11 @@ export const ItemAnalysisView: React.FC<ItemAnalysisViewProps> = ({
           {isTeacherHost && (
             <button
               type="button"
-              onClick={onPlayAgain}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-black transition-colors"
+              onClick={() => setShowResetConfirm(true)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-black transition-colors shadow-sm"
             >
               <RotateCcw className="w-3.5 h-3.5" />
-              <span>Reset Sesi Kelas</span>
+              <span>Reset Papan Peringkat (Guru)</span>
             </button>
           )}
 
@@ -780,7 +788,7 @@ export const ItemAnalysisView: React.FC<ItemAnalysisViewProps> = ({
              ================================================================= */}
           {activeTab === 'PERINGKAT' && (
             <div className="bg-white rounded-2xl border-2 border-slate-300 p-4 sm:p-6 shadow-xs space-y-4">
-              <div className="border-b border-slate-200 pb-3 flex flex-wrap items-center justify-between gap-2">
+              <div className="border-b border-slate-200 pb-3 flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <h3 className="text-base sm:text-lg font-extrabold text-slate-900">
                     Peringkat Nilai Siswa di Kelas (Room: {roomPin || 'MTN14'})
@@ -788,6 +796,43 @@ export const ItemAnalysisView: React.FC<ItemAnalysisViewProps> = ({
                   <p className="text-xs text-slate-600">
                     Urutan peringkat berdasarkan skor dan jumlah jawaban benar selama mengerjakan CBT.
                   </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <label className="text-xs font-bold text-slate-700">Filter Kelas:</label>
+                  <select
+                    value={selectedClassFilter}
+                    onChange={(e) => setSelectedClassFilter(e.target.value)}
+                    className="px-3 py-1.5 rounded-lg bg-slate-100 border border-slate-300 text-xs font-bold text-slate-900 focus:outline-none focus:border-emerald-600"
+                  >
+                    <option value="ALL">Semua Kelas ({players.length})</option>
+                    <optgroup label="Kelas 7 (7A – 7G)">
+                      <option value="Kelas 7A">Kelas 7A</option>
+                      <option value="Kelas 7B">Kelas 7B</option>
+                      <option value="Kelas 7C">Kelas 7C</option>
+                      <option value="Kelas 7D">Kelas 7D</option>
+                      <option value="Kelas 7E">Kelas 7E</option>
+                      <option value="Kelas 7F">Kelas 7F</option>
+                      <option value="Kelas 7G">Kelas 7G</option>
+                    </optgroup>
+                    <optgroup label="Kelas 8 (8A – 8H)">
+                      <option value="Kelas 8A">Kelas 8A</option>
+                      <option value="Kelas 8B">Kelas 8B</option>
+                      <option value="Kelas 8C">Kelas 8C</option>
+                      <option value="Kelas 8D">Kelas 8D</option>
+                      <option value="Kelas 8E">Kelas 8E</option>
+                      <option value="Kelas 8F">Kelas 8F</option>
+                      <option value="Kelas 8G">Kelas 8G</option>
+                      <option value="Kelas 8H">Kelas 8H</option>
+                    </optgroup>
+                    <optgroup label="Kelas 9 (9A – 9E)">
+                      <option value="Kelas 9A">Kelas 9A</option>
+                      <option value="Kelas 9B">Kelas 9B</option>
+                      <option value="Kelas 9C">Kelas 9C</option>
+                      <option value="Kelas 9D">Kelas 9D</option>
+                      <option value="Kelas 9E">Kelas 9E</option>
+                    </optgroup>
+                  </select>
                 </div>
               </div>
 
@@ -864,6 +909,44 @@ export const ItemAnalysisView: React.FC<ItemAnalysisViewProps> = ({
           )}
         </div>
       </div>
+
+      {/* Confirmation Modal for Reset Leaderboard (Khusus Guru) */}
+      {showResetConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+          <div className="w-full max-w-md bg-slate-900 border-2 border-rose-500 rounded-2xl p-5 shadow-2xl text-slate-100 space-y-4">
+            <div className="flex items-center gap-3 text-rose-400">
+              <RotateCcw className="w-6 h-6 shrink-0 animate-spin" />
+              <h3 className="text-lg font-black uppercase tracking-tight">
+                KONFIRMASI HAPUS PAPAN PERINGKAT GURU
+              </h3>
+            </div>
+            <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
+              Apakah Anda yakin ingin <strong className="text-rose-400">MENGHAPUS SELURUH JAWABAN SISWA</strong> dan <strong className="text-amber-300">MERESET PAPAN PERINGKAT</strong>?
+              Seluruh riwayat nilai siswa di kelas akan kembali ke 0.
+            </p>
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowResetConfirm(false)}
+                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold transition-colors"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowResetConfirm(false);
+                  onResetLeaderboard?.();
+                  onPlayAgain();
+                }}
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-black transition-colors shadow-lg"
+              >
+                Ya, Hapus Data & Reset
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

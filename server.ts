@@ -11,6 +11,7 @@ import {
   InformaticsQuestion,
   OptionKey,
   PlayerAnswerEvent,
+  syncQuestionsWithInitialConciseOptions,
 } from './src/data/informaticsData.ts';
 
 export interface ClassMapPlayer {
@@ -86,7 +87,7 @@ export const MAP_HEIGHT = 1500;
 export const SPAWN_CENTER_X = 1200;
 export const SPAWN_CENTER_Y = 780;
 
-const STATE_FILE_PATH = path.join(process.cwd(), '.mtsn14_halim_state.json');
+const STATE_FILE_PATH = path.join(process.cwd(), '.mtsn14_halim_state_v2.json');
 
 const VERSUS_CHALLENGE_POOL: VersusQuestionItem[] = [
   {
@@ -145,10 +146,6 @@ const VERSUS_CHALLENGE_POOL: VersusQuestionItem[] = [
   },
 ];
 
-function pickVersusQuestions(): VersusQuestionItem[] {
-  return [...VERSUS_CHALLENGE_POOL].sort(() => Math.random() - 0.5).slice(0, 3);
-}
-
 // ============================================================================
 // SINGLE UNIFIED SHARED ARENA STATE (100% OF STUDENTS MEET ON 1 ARENA)
 // ============================================================================
@@ -161,6 +158,37 @@ let arenaRoomName = 'Kampus MTsN 14 Halim Jakarta Timur';
 let arenaTeacherName = 'Azhary Mardhani, S.Kom';
 let arenaStatus: 'LOBBY' | 'PLAYING' | 'ROUND_RESULT' | 'FINISHED' = 'PLAYING';
 let arenaCategoryFilter = 'Semua Materi';
+let enabledQuestionIdsStore: string[] = [];
+let arenaQuestionLimit = 0; // 0 = Semua Soal Aktif, >0 = Batas Jumlah Soal Ujian (misal 5, 10, 15, 20, 25, 30, 40, 50)
+
+function pickVersusQuestions(challengerClass?: string): VersusQuestionItem[] {
+  let pool = questionsStore;
+  if (enabledQuestionIdsStore.length > 0) {
+    const enabledSet = new Set(enabledQuestionIdsStore);
+    const byIds = pool.filter((q) => enabledSet.has(q.id));
+    if (byIds.length > 0) pool = byIds;
+  }
+  const targetGrade = challengerClass?.startsWith('Kelas 7')
+    ? 'Kelas 7'
+    : challengerClass?.startsWith('Kelas 8')
+    ? 'Kelas 8'
+    : null;
+  if (targetGrade) {
+    const byGrade = pool.filter((q) => q.gradeLevel === targetGrade);
+    if (byGrade.length > 0) pool = byGrade;
+  }
+  if (pool.length >= 3) {
+    const picked = [...pool].sort(() => Math.random() - 0.5).slice(0, 3);
+    const keys: Array<'A' | 'B' | 'C' | 'D'> = ['A', 'B', 'C', 'D'];
+    return picked.map((q) => ({
+      prompt: q.question,
+      options: [q.options.A, q.options.B, q.options.C, q.options.D],
+      correctIndex: Math.max(0, keys.indexOf(q.correctAnswer)),
+      topic: `${q.gradeLevel} · ${q.category}`,
+    }));
+  }
+  return [...VERSUS_CHALLENGE_POOL].sort(() => Math.random() - 0.5).slice(0, 3);
+}
 const arenaPlayers = new Map<string, ClassMapPlayer>();
 let arenaChatMessages: RoomChatMessage[] = [
   {
@@ -269,6 +297,8 @@ function schedulePersistStateToDisk() {
           teacherName: arenaTeacherName,
           status: arenaStatus,
           categoryFilter: arenaCategoryFilter,
+          enabledQuestionIds: enabledQuestionIdsStore,
+          questionLimit: arenaQuestionLimit,
           players: Array.from(arenaPlayers.values()),
           chatMessages: arenaChatMessages.slice(-60),
         },
@@ -285,11 +315,11 @@ function loadPersistedStateFromDisk() {
     if (!fs.existsSync(STATE_FILE_PATH)) return;
     const raw = fs.readFileSync(STATE_FILE_PATH, 'utf-8');
     const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed.materials) && parsed.materials.length > 0) {
+    if (Array.isArray(parsed.materials) && parsed.materials.length >= INITIAL_MATERIALS.length) {
       materialsStore = parsed.materials;
     }
-    if (Array.isArray(parsed.questions) && parsed.questions.length > 0) {
-      questionsStore = parsed.questions;
+    if (Array.isArray(parsed.questions) && parsed.questions.length >= INITIAL_QUESTIONS.length) {
+      questionsStore = syncQuestionsWithInitialConciseOptions(parsed.questions);
     }
     if (Array.isArray(parsed.globalAnswerHistory)) {
       globalAnswerHistory = parsed.globalAnswerHistory;
@@ -297,6 +327,12 @@ function loadPersistedStateFromDisk() {
     if (parsed.arena) {
       arenaPin = parsed.arena.pin || 'MTN14';
       arenaCategoryFilter = parsed.arena.categoryFilter || 'Semua Materi';
+      if (Array.isArray(parsed.arena.enabledQuestionIds)) {
+        enabledQuestionIdsStore = parsed.arena.enabledQuestionIds.map(String);
+      }
+      if (typeof parsed.arena.questionLimit === 'number' && parsed.arena.questionLimit >= 0) {
+        arenaQuestionLimit = parsed.arena.questionLimit;
+      }
       if (Array.isArray(parsed.arena.chatMessages) && parsed.arena.chatMessages.length > 0) {
         arenaChatMessages = parsed.arena.chatMessages.slice(-60);
       }
@@ -392,6 +428,8 @@ function serializeArena(requestedPin?: string) {
     hostId: 'teacher-default',
     status: arenaStatus,
     categoryFilter: arenaCategoryFilter,
+    enabledQuestionIds: enabledQuestionIdsStore,
+    questionLimit: arenaQuestionLimit,
     currentQuestionIndex: 0,
     totalQuestions: qs.length,
     timeLeftSec: 60,
@@ -718,7 +756,7 @@ async function startServer() {
       opponentClass: opponent.studentClass,
       isBotOpponent: isBot,
       roundIdx: 0,
-      questions: pickVersusQuestions(),
+      questions: pickVersusQuestions(challengerClass),
       challengerScore: 0,
       opponentScore: 0,
       challengerAnsweredRound: -1,
@@ -820,6 +858,8 @@ async function startServer() {
       },
       materials: materialsStore,
       questions: questionsStore,
+      enabledQuestionIds: enabledQuestionIdsStore,
+      questionLimit: arenaQuestionLimit,
       activeRooms: [
         {
           pin: arenaPin,
@@ -832,6 +872,61 @@ async function startServer() {
         },
       ],
       recentAnswersCount: globalAnswerHistory.length,
+    });
+  });
+
+  app.post('/api/room/config', (req, res) => {
+    const { categoryFilter, enabledQuestionIds, questionLimit } = req.body || {};
+    if (typeof categoryFilter === 'string') {
+      arenaCategoryFilter = categoryFilter;
+    }
+    if (Array.isArray(enabledQuestionIds)) {
+      enabledQuestionIdsStore = enabledQuestionIds.map(String);
+    }
+    if (typeof questionLimit === 'number' && questionLimit >= 0) {
+      arenaQuestionLimit = questionLimit;
+    }
+    schedulePersistStateToDisk();
+    const serialized = serializeArena(arenaPin);
+    broadcastToArena({ type: 'room:state', payload: serialized });
+    res.json({
+      ok: true,
+      room: serialized,
+      enabledQuestionIds: enabledQuestionIdsStore,
+      questionLimit: arenaQuestionLimit,
+    });
+  });
+
+  // Teacher-Only Reset Leaderboard & Student Score Data Endpoint
+  app.post('/api/room/reset_leaderboard', (req, res) => {
+    const { role, isTeacher } = req.body || {};
+    if (role !== 'TEACHER' && !isTeacher) {
+      res.status(403).json({
+        error: 'Akses ditolak! Hanya Guru yang dapat menghapus data nilai dan papan peringkat siswa.',
+      });
+      return;
+    }
+
+    globalAnswerHistory = [];
+    for (const p of arenaPlayers.values()) {
+      if (!p.isRoamingPeer) {
+        p.score = 0;
+        p.answeredCount = 0;
+        p.answeredQuestionIds = [];
+        p.collectedItemsCount = 0;
+        p.missionPoints = 100;
+        p.lastUpdated = Date.now();
+      }
+    }
+
+    schedulePersistStateToDisk();
+    const serialized = serializeArena(arenaPin);
+    broadcastToArena({ type: 'room:state', payload: serialized });
+
+    res.json({
+      ok: true,
+      message: 'Papan peringkat dan seluruh data jawaban siswa berhasil direset oleh Guru.',
+      room: serialized,
     });
   });
 
@@ -1433,6 +1528,22 @@ async function startServer() {
           arenaStatus = 'PLAYING';
           schedulePersistStateToDisk();
           broadcastToArena({ type: 'room:state', payload: serializeArena(arenaPin) });
+        } else if (type === 'room:reset_leaderboard') {
+          if (payload?.role === 'TEACHER' || payload?.isTeacher) {
+            globalAnswerHistory = [];
+            for (const p of arenaPlayers.values()) {
+              if (!p.isRoamingPeer) {
+                p.score = 0;
+                p.answeredCount = 0;
+                p.answeredQuestionIds = [];
+                p.collectedItemsCount = 0;
+                p.missionPoints = 100;
+                p.lastUpdated = Date.now();
+              }
+            }
+            schedulePersistStateToDisk();
+            broadcastToArena({ type: 'room:state', payload: serializeArena(arenaPin) });
+          }
         }
       } catch {
         // Ignore malformed packets

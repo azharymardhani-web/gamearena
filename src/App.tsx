@@ -4,18 +4,25 @@ import {
   INITIAL_QUESTIONS,
   InformaticsMaterial,
   InformaticsQuestion,
+  KELAS_7_CHAPTERS,
+  KELAS_8_CHAPTERS,
   PlayerAnswerEvent,
+  syncQuestionsWithInitialConciseOptions,
 } from './data/informaticsData';
 import {
   CHARACTER_PRESETS,
   CyberArenaCanvas,
   MapPlayerEntity,
+  TEACHER_POSTS,
   TeacherPostLocation,
 } from './components/CyberArenaCanvas';
 import { MaterialManagerModal } from './components/MaterialManagerModal';
 import { ItemAnalysisView } from './components/ItemAnalysisView';
 import { BuildingInteriorModal } from './components/BuildingInteriorModal';
+import { GameGuideModal } from './components/GameGuideModal';
+import { CompletionCeremonyModal } from './components/CompletionCeremonyModal';
 import {
+  STATION_ROBLOX_ZONES,
   TeacherQuestModal,
   VersusDuelModal,
   VersusMatchStateClient,
@@ -49,6 +56,7 @@ import {
   MessageSquare,
   Send,
   X,
+  HelpCircle,
 } from 'lucide-react';
 
 interface ActiveRoomSummary {
@@ -82,6 +90,7 @@ interface SavedRealtimeSession {
   selectedPresetId: string;
   avatarColor: string;
   selectedCategory: string;
+  questionCountLimit?: number;
   x: number;
   y: number;
   localScore: number;
@@ -266,6 +275,14 @@ export default function App() {
   const [teacherRoomCode, setTeacherRoomCode] = useState<string>(
     initialSession?.activePin || 'MTN14'
   );
+  const [teacherPasswordInput, setTeacherPasswordInput] = useState<string>('');
+  const [showTeacherPassword, setShowTeacherPassword] = useState<boolean>(false);
+  const [isTeacherUnlocked, setIsTeacherUnlocked] = useState<boolean>(false);
+  const [pendingOpenBankSoalAfterAuth, setPendingOpenBankSoalAfterAuth] = useState<boolean>(false);
+  const [pendingOpenAnalysisAfterAuth, setPendingOpenAnalysisAfterAuth] = useState<boolean>(false);
+  const [teacherChapterGradeTab, setTeacherChapterGradeTab] = useState<'Kelas 7' | 'Kelas 8'>(
+    'Kelas 7'
+  );
   const [selectedCategory, setSelectedCategory] = useState<string>(
     initialSession?.selectedCategory || 'Semua Materi'
   );
@@ -296,7 +313,7 @@ export default function App() {
   // Materials & Question Bank State
   const [materials, setMaterials] = useState<InformaticsMaterial[]>(() => {
     try {
-      const saved = localStorage.getItem('mtsn14_materials_v1');
+      const saved = localStorage.getItem('mtsn14_materials_v2');
       return saved ? JSON.parse(saved) : INITIAL_MATERIALS;
     } catch {
       return INITIAL_MATERIALS;
@@ -305,10 +322,37 @@ export default function App() {
 
   const [questions, setQuestions] = useState<InformaticsQuestion[]>(() => {
     try {
-      const saved = localStorage.getItem('mtsn14_questions_v1');
-      return saved ? JSON.parse(saved) : INITIAL_QUESTIONS;
+      const saved = localStorage.getItem('mtsn14_questions_v2');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length >= INITIAL_QUESTIONS.length) {
+          return syncQuestionsWithInitialConciseOptions(parsed);
+        }
+      }
+      return INITIAL_QUESTIONS;
     } catch {
       return INITIAL_QUESTIONS;
+    }
+  });
+
+  const [enabledQuestionIds, setEnabledQuestionIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('mtsn14_enabled_q_ids_v2');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [questionCountLimit, setQuestionCountLimit] = useState<number>(() => {
+    if (typeof initialSession?.questionCountLimit === 'number') {
+      return initialSession.questionCountLimit;
+    }
+    try {
+      const saved = localStorage.getItem('mtsn14_question_limit_v2');
+      return saved ? Math.max(0, Number(JSON.parse(saved)) || 0) : 0;
+    } catch {
+      return 0;
     }
   });
 
@@ -374,6 +418,9 @@ export default function App() {
   const [cameraMode, setCameraMode] = useState<'FOLLOW_PLAYER' | 'FULL_MAP'>('FOLLOW_PLAYER');
   const [isMaterialModalOpen, setIsMaterialModalOpen] = useState<boolean>(false);
   const [isAnalysisPreviewOpen, setIsAnalysisPreviewOpen] = useState<boolean>(false);
+  const [isCompletionCeremonyOpen, setIsCompletionCeremonyOpen] = useState<boolean>(false);
+  const [hasShownCompletionCeremony, setHasShownCompletionCeremony] = useState<boolean>(false);
+  const [isGuideModalOpen, setIsGuideModalOpen] = useState<boolean>(false);
   const [isMuted, setIsMuted] = useState<boolean>(false);
   const initialTabPlayerId = useMemo(
     () => initialSession?.playerId || makePlayerIdForWindow(initialSession?.studentName || 'siswa'),
@@ -469,6 +516,7 @@ export default function App() {
           selectedPresetId,
           avatarColor,
           selectedCategory,
+          questionCountLimit,
           x: overrideX !== undefined ? overrideX : latestPosRef.current.x,
           y: overrideY !== undefined ? overrideY : latestPosRef.current.y,
           localScore,
@@ -502,6 +550,7 @@ export default function App() {
       selectedPresetId,
       avatarColor,
       selectedCategory,
+      questionCountLimit,
       localScore,
       missionPoints,
       collectedItemsCount,
@@ -538,11 +587,158 @@ export default function App() {
     };
   }, [persistRealtimeSnapshot]);
 
+  const effectiveEnabledQuestionSet = useMemo(() => {
+    if (!enabledQuestionIds || enabledQuestionIds.length === 0) {
+      return new Set(questions.map((q) => q.id));
+    }
+    const validIds = enabledQuestionIds.filter((id) => questions.some((q) => q.id === id));
+    if (validIds.length === 0) {
+      return new Set(questions.map((q) => q.id));
+    }
+    return new Set(validIds);
+  }, [enabledQuestionIds, questions]);
+
+  const activeChaptersKelas7 = useMemo(() => {
+    return KELAS_7_CHAPTERS.filter((ch) =>
+      questions.some(
+        (q) =>
+          q.gradeLevel === 'Kelas 7' &&
+          q.category === ch &&
+          effectiveEnabledQuestionSet.has(q.id)
+      )
+    );
+  }, [questions, effectiveEnabledQuestionSet]);
+
+  const activeChaptersKelas8 = useMemo(() => {
+    return KELAS_8_CHAPTERS.filter((ch) =>
+      questions.some(
+        (q) =>
+          q.gradeLevel === 'Kelas 8' &&
+          q.category === ch &&
+          effectiveEnabledQuestionSet.has(q.id)
+      )
+    );
+  }, [questions, effectiveEnabledQuestionSet]);
+
+  useEffect(() => {
+    if (!selectedCategory || selectedCategory === 'Semua Materi') return;
+    const stillActive =
+      activeChaptersKelas7.includes(selectedCategory as any) ||
+      activeChaptersKelas8.includes(selectedCategory as any);
+    if (!stillActive) {
+      setSelectedCategory('Semua Materi');
+    }
+  }, [selectedCategory, activeChaptersKelas7, activeChaptersKelas8]);
+
+  const teacherActiveQuestions = useMemo(() => {
+    let pool = questions;
+    if (enabledQuestionIds.length > 0) {
+      const enabledSet = new Set(enabledQuestionIds);
+      const byIds = pool.filter((q) => enabledSet.has(q.id));
+      if (byIds.length > 0) {
+        pool = byIds;
+      }
+    }
+    if (!selectedCategory || selectedCategory === 'Semua Materi') return pool;
+    const filtered = pool.filter((q) => q.category === selectedCategory);
+    return filtered.length > 0 ? filtered : pool;
+  }, [questions, enabledQuestionIds, selectedCategory]);
+
+  // Soal otomatis menyesuaikan Kelas yang dipilih oleh Siswa (Kelas 7A-7G -> Kelas 7, Kelas 8A-8H -> Kelas 8)
+  // Serta menyesuaikan Banyaknya Soal (questionCountLimit) jika dipilih
   const activeQuestions = useMemo(() => {
-    if (!selectedCategory || selectedCategory === 'Semua Materi') return questions;
-    const filtered = questions.filter((q) => q.category === selectedCategory);
-    return filtered.length > 0 ? filtered : questions;
-  }, [questions, selectedCategory]);
+    let basePool = teacherActiveQuestions;
+    if (localRole !== 'TEACHER') {
+      const targetGrade = studentClass.startsWith('Kelas 7')
+        ? 'Kelas 7'
+        : studentClass.startsWith('Kelas 8')
+        ? 'Kelas 8'
+        : null;
+      if (targetGrade) {
+        const byGrade = teacherActiveQuestions.filter((q) => q.gradeLevel === targetGrade);
+        if (byGrade.length > 0) {
+          basePool = byGrade;
+        }
+      }
+    }
+    if (questionCountLimit > 0 && basePool.length > questionCountLimit) {
+      return basePool.slice(0, questionCountLimit);
+    }
+    return basePool;
+  }, [teacherActiveQuestions, localRole, studentClass, questionCountLimit]);
+
+  const isCbtCompleted = useMemo(() => {
+    return activeQuestions.length > 0 && answeredQuestionIds.size >= activeQuestions.length;
+  }, [activeQuestions, answeredQuestionIds]);
+
+  // Otomatis Teleport ke Lapangan Upacara Bendera dan tampilkan Modal Selebrasi ketika Soal Selesai
+  useEffect(() => {
+    if (joinedRoom && isCbtCompleted && !hasShownCompletionCeremony && localRole === 'STUDENT') {
+      setHasShownCompletionCeremony(true);
+      setIsCompletionCeremonyOpen(true);
+      setTeleportCommand({ x: 1200, y: 480, seq: Date.now() });
+      soundEngine.playVictoryFanfare();
+    }
+  }, [joinedRoom, isCbtCompleted, hasShownCompletionCeremony, localRole]);
+
+  // Materi yang aktif menyesuaikan bab materi yang diaktifkan oleh Guru
+  const activeMaterials = useMemo(() => {
+    const activeChapterKeys = new Set(
+      teacherActiveQuestions.map((q) => `${q.gradeLevel}::${q.category}`)
+    );
+    const filtered = materials.filter((m) =>
+      activeChapterKeys.has(`${m.gradeLevel}::${m.category}`)
+    );
+    return filtered.length > 0 ? filtered : materials;
+  }, [materials, teacherActiveQuestions]);
+
+  const activeCategoriesSet = useMemo(() => {
+    return Array.from(new Set(activeQuestions.map((q) => q.category)));
+  }, [activeQuestions]);
+
+  const activeTargetPosts = useMemo(() => {
+    return TEACHER_POSTS.filter((post) => {
+      const keywords =
+        STATION_ROBLOX_ZONES[post.index % STATION_ROBLOX_ZONES.length]?.chapterKeywords || [];
+      return activeCategoriesSet.some((cat) => keywords.some((kw) => cat.includes(kw)));
+    });
+  }, [activeCategoriesSet]);
+
+  const nearestActiveTargetPost = useMemo(() => {
+    const list = activeTargetPosts.length > 0 ? activeTargetPosts : TEACHER_POSTS;
+    let minD = Infinity;
+    let best = list[0];
+    for (const p of list) {
+      const dist = Math.hypot(p.mapX - localHud.x, p.mapY - localHud.y);
+      if (dist < minD) {
+        minD = dist;
+        best = p;
+      }
+    }
+    return best;
+  }, [activeTargetPosts, localHud.x, localHud.y]);
+
+  const activeBuildingDistMeters = Math.round(
+    Math.hypot(
+      (nearestActiveTargetPost?.mapX || 1200) - localHud.x,
+      (nearestActiveTargetPost?.mapY || 200) - localHud.y
+    ) * 0.1
+  );
+
+  const activeBuildingArrow = useMemo(() => {
+    if (!nearestActiveTargetPost) return '↗️';
+    const dx = nearestActiveTargetPost.mapX - localHud.x;
+    const dy = nearestActiveTargetPost.mapY - localHud.y;
+    const deg = (Math.atan2(dy, dx) * 180) / Math.PI;
+    if (deg >= -22.5 && deg < 22.5) return '➡️';
+    if (deg >= 22.5 && deg < 67.5) return '↘️';
+    if (deg >= 67.5 && deg < 112.5) return '⬇️';
+    if (deg >= 112.5 && deg < 157.5) return '↙️';
+    if (deg >= 157.5 || deg < -157.5) return '⬅️';
+    if (deg >= -157.5 && deg < -112.5) return '↖️';
+    if (deg >= -112.5 && deg < -67.5) return '⬆️';
+    return '↗️';
+  }, [nearestActiveTargetPost, localHud.x, localHud.y]);
 
   const currentQuestion = activeQuestions[currentQuestionIndex] || activeQuestions[0] || null;
 
@@ -559,7 +755,15 @@ export default function App() {
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (data?.materials?.length) setMaterials(data.materials);
-        if (data?.questions?.length) setQuestions(data.questions);
+        if (data?.questions?.length) {
+          setQuestions(syncQuestionsWithInitialConciseOptions(data.questions));
+        }
+        if (Array.isArray(data?.enabledQuestionIds)) {
+          setEnabledQuestionIds(data.enabledQuestionIds);
+        }
+        if (typeof data?.questionLimit === 'number' && data.questionLimit >= 0) {
+          setQuestionCountLimit(data.questionLimit);
+        }
         if (Array.isArray(data?.activeRooms)) setActiveRoomsList(data.activeRooms);
       })
       .catch(() => {});
@@ -787,6 +991,24 @@ export default function App() {
         setSessionAnswers((prev) => [...prev, ev]);
       } else if (pkt.type === 'room:status' && pkt.payload?.status) {
         setRoomStatus(pkt.payload.status);
+      } else if (pkt.type === 'room:config' && pkt.payload) {
+        if (typeof pkt.payload.categoryFilter === 'string') {
+          setSelectedCategory(pkt.payload.categoryFilter);
+        }
+        if (Array.isArray(pkt.payload.enabledQuestionIds)) {
+          setEnabledQuestionIds(pkt.payload.enabledQuestionIds);
+          localStorage.setItem(
+            'mtsn14_enabled_q_ids_v2',
+            JSON.stringify(pkt.payload.enabledQuestionIds)
+          );
+        }
+        if (typeof pkt.payload.questionLimit === 'number' && pkt.payload.questionLimit >= 0) {
+          setQuestionCountLimit(pkt.payload.questionLimit);
+          localStorage.setItem(
+            'mtsn14_question_limit_v2',
+            JSON.stringify(pkt.payload.questionLimit)
+          );
+        }
       }
     });
 
@@ -841,6 +1063,12 @@ export default function App() {
             const room = msg.payload;
             setRoomStatus(room.status);
             setSelectedCategory(room.categoryFilter || 'Semua Materi');
+            if (Array.isArray(room.enabledQuestionIds)) {
+              setEnabledQuestionIds(room.enabledQuestionIds);
+            }
+            if (typeof room.questionLimit === 'number' && room.questionLimit >= 0) {
+              setQuestionCountLimit(room.questionLimit);
+            }
             setCurrentQuestionIndex(room.currentQuestionIndex || 0);
             setClassPlayers((prev) =>
               mergePlayersPreservingFreshMovement(prev, room.players || [])
@@ -878,6 +1106,12 @@ export default function App() {
               return room.status;
             });
             setSelectedCategory(room.categoryFilter || 'Semua Materi');
+            if (Array.isArray(room.enabledQuestionIds)) {
+              setEnabledQuestionIds(room.enabledQuestionIds);
+            }
+            if (typeof room.questionLimit === 'number' && room.questionLimit >= 0) {
+              setQuestionCountLimit(room.questionLimit);
+            }
             setCurrentQuestionIndex(room.currentQuestionIndex || 0);
             setClassPlayers((prev) =>
               mergePlayersPreservingFreshMovement(prev, room.players || [])
@@ -1183,8 +1417,38 @@ export default function App() {
     );
   };
 
+  const handleVerifyTeacherPassword = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (teacherPasswordInput.trim() !== 'Kangguru00') {
+      soundEngine.playWrongAnswer();
+      setAuthError(
+        'Password Akses Guru tidak sesuai! Silakan masukkan password resmi Guru Informatika.'
+      );
+      return;
+    }
+    soundEngine.playClick();
+    setIsTeacherUnlocked(true);
+    setAuthError(null);
+    if (pendingOpenBankSoalAfterAuth) {
+      setPendingOpenBankSoalAfterAuth(false);
+      setIsMaterialModalOpen(true);
+    }
+    if (pendingOpenAnalysisAfterAuth) {
+      setPendingOpenAnalysisAfterAuth(false);
+      setIsAnalysisPreviewOpen(true);
+    }
+  };
+
   const handleTeacherOpenRoom = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isTeacherUnlocked && teacherPasswordInput.trim() !== 'Kangguru00') {
+      setAuthError(
+        'Password Akses Guru tidak sesuai! Silakan masukkan password resmi Guru Informatika.'
+      );
+      return;
+    }
+    setIsTeacherUnlocked(true);
+    setAuthError(null);
     const cleanPin = normalizePin(teacherRoomCode);
     const uniqueId = makePlayerIdForWindow('azhary');
     localPlayerIdRef.current = uniqueId;
@@ -1400,6 +1664,39 @@ export default function App() {
     (opponent: MapPlayerEntity) => {
       soundEngine.playDash();
       const isBot = Boolean(opponent.isRoamingPeer);
+      const optionKeys: Array<'A' | 'B' | 'C' | 'D'> = ['A', 'B', 'C', 'D'];
+      const pickedFromClassPool =
+        activeQuestions.length >= 3
+          ? [...activeQuestions]
+              .sort(() => Math.random() - 0.5)
+              .slice(0, 3)
+              .map((q) => ({
+                prompt: q.question,
+                options: [q.options.A, q.options.B, q.options.C, q.options.D],
+                correctIndex: Math.max(0, optionKeys.indexOf(q.correctAnswer)),
+                topic: `${q.gradeLevel} · ${q.category}`,
+              }))
+          : [
+              {
+                prompt: 'Konversi cepat bilangan biner 1010(2) ke desimal adalah...',
+                options: ['8', '10', '12', '14'],
+                correctIndex: 1,
+                topic: 'Sistem Bilangan Biner',
+              },
+              {
+                prompt: 'Gerbang logika AND menghasilkan output 1 jika kedua input bernilai...',
+                options: ['0 dan 0', '1 dan 0', '0 dan 1', '1 dan 1'],
+                correctIndex: 3,
+                topic: 'Gerbang Logika CPU',
+              },
+              {
+                prompt: 'Protokol web yang mengenkripsi paket data dengan SSL/TLS adalah...',
+                options: ['HTTP', 'FTP', 'HTTPS', 'TELNET'],
+                correctIndex: 2,
+                topic: 'Keamanan Jaringan',
+              },
+            ];
+
       const clientMatch: VersusMatchStateClient = {
         id: `vs-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         pin: activePin,
@@ -1412,26 +1709,7 @@ export default function App() {
         opponentClass: opponent.studentClass,
         isBotOpponent: isBot,
         roundIdx: 0,
-        questions: [
-          {
-            prompt: 'Konversi cepat bilangan biner 1010(2) ke desimal adalah...',
-            options: ['8', '10', '12', '14'],
-            correctIndex: 1,
-            topic: 'Sistem Bilangan Biner',
-          },
-          {
-            prompt: 'Gerbang logika AND menghasilkan output 1 jika kedua input bernilai...',
-            options: ['0 dan 0', '1 dan 0', '0 dan 1', '1 dan 1'],
-            correctIndex: 3,
-            topic: 'Gerbang Logika CPU',
-          },
-          {
-            prompt: 'Protokol web yang mengenkripsi paket data dengan SSL/TLS adalah...',
-            options: ['HTTP', 'FTP', 'HTTPS', 'TELNET'],
-            correctIndex: 2,
-            topic: 'Keamanan Jaringan',
-          },
-        ],
+        questions: pickedFromClassPool,
         challengerScore: 0,
         opponentScore: 0,
         challengerAnsweredRound: -1,
@@ -1479,7 +1757,7 @@ export default function App() {
         })
         .catch(() => {});
     },
-    [activePin, studentName, studentClass, upsertVersusMatchState]
+    [activePin, studentName, studentClass, activeQuestions, upsertVersusMatchState]
   );
 
   const handleRespondVersusConsent = useCallback(
@@ -1687,6 +1965,35 @@ export default function App() {
     }
   };
 
+  const handleResetLeaderboardByTeacher = useCallback(() => {
+    setSessionAnswers([]);
+    setAnsweredQuestionIds(new Set());
+    setLocalScore(0);
+    setHasShownCompletionCeremony(false);
+
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(
+        JSON.stringify({
+          type: 'room:reset_leaderboard',
+          payload: { role: 'TEACHER', isTeacher: true },
+        })
+      );
+    }
+    fetch('/api/room/reset_leaderboard', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role: 'TEACHER', isTeacher: true }),
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data?.room?.players) {
+          setClassPlayers(data.room.players);
+          setSessionAnswers(data.room.answers || []);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   const handleCopyRoomPin = () => {
     navigator.clipboard?.writeText(activePin).catch(() => {});
     setCopiedPin(true);
@@ -1696,7 +2003,7 @@ export default function App() {
   const handleSaveMaterial = (mat: InformaticsMaterial) => {
     setMaterials((prev) => {
       const updated = [mat, ...prev.filter((m) => m.id !== mat.id)];
-      localStorage.setItem('mtsn14_materials_v1', JSON.stringify(updated));
+      localStorage.setItem('mtsn14_materials_v2', JSON.stringify(updated));
       return updated;
     });
     fetch('/api/materials', {
@@ -1709,7 +2016,7 @@ export default function App() {
   const handleDeleteMaterial = (id: string) => {
     setMaterials((prev) => {
       const updated = prev.filter((m) => m.id !== id);
-      localStorage.setItem('mtsn14_materials_v1', JSON.stringify(updated));
+      localStorage.setItem('mtsn14_materials_v2', JSON.stringify(updated));
       return updated;
     });
     fetch(`/api/materials/${id}`, { method: 'DELETE' }).catch(() => {});
@@ -1718,7 +2025,7 @@ export default function App() {
   const handleSaveQuestion = (q: InformaticsQuestion) => {
     setQuestions((prev) => {
       const updated = [...prev.filter((item) => item.id !== q.id), q];
-      localStorage.setItem('mtsn14_questions_v1', JSON.stringify(updated));
+      localStorage.setItem('mtsn14_questions_v2', JSON.stringify(updated));
       return updated;
     });
     fetch('/api/questions', {
@@ -1732,11 +2039,139 @@ export default function App() {
     if (questions.length <= 3) return;
     setQuestions((prev) => {
       const updated = prev.filter((q) => q.id !== id);
-      localStorage.setItem('mtsn14_questions_v1', JSON.stringify(updated));
+      localStorage.setItem('mtsn14_questions_v2', JSON.stringify(updated));
       return updated;
     });
     fetch(`/api/questions/${id}`, { method: 'DELETE' }).catch(() => {});
   };
+
+  const handleUpdateEnabledQuestions = useCallback(
+    (ids: string[]) => {
+      setEnabledQuestionIds(ids);
+      localStorage.setItem('mtsn14_enabled_q_ids_v2', JSON.stringify(ids));
+      cloudBridgeRef.current?.publish('room:config', {
+        categoryFilter: selectedCategory,
+        enabledQuestionIds: ids,
+        questionLimit: questionCountLimit,
+      });
+      fetch('/api/room/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          categoryFilter: selectedCategory,
+          enabledQuestionIds: ids,
+          questionLimit: questionCountLimit,
+        }),
+      }).catch(() => {});
+    },
+    [selectedCategory, questionCountLimit]
+  );
+
+  const handleUpdateQuestionCountLimit = useCallback(
+    (newLimit: number) => {
+      const cleanLimit = Math.max(0, Number(newLimit) || 0);
+      setQuestionCountLimit(cleanLimit);
+      localStorage.setItem('mtsn14_question_limit_v2', JSON.stringify(cleanLimit));
+      cloudBridgeRef.current?.publish('room:config', {
+        categoryFilter: selectedCategory,
+        enabledQuestionIds,
+        questionLimit: cleanLimit,
+      });
+      fetch('/api/room/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          categoryFilter: selectedCategory,
+          enabledQuestionIds,
+          questionLimit: cleanLimit,
+        }),
+      }).catch(() => {});
+    },
+    [selectedCategory, enabledQuestionIds]
+  );
+
+  const handleTeacherCategoryChange = useCallback(
+    (newCategory: string) => {
+      setSelectedCategory(newCategory);
+      cloudBridgeRef.current?.publish('room:config', {
+        categoryFilter: newCategory,
+        enabledQuestionIds,
+        questionLimit: questionCountLimit,
+      });
+      fetch('/api/room/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          categoryFilter: newCategory,
+          enabledQuestionIds,
+          questionLimit: questionCountLimit,
+        }),
+      }).catch(() => {});
+    },
+    [enabledQuestionIds, questionCountLimit]
+  );
+
+  const handleToggleTeacherChapterDirect = useCallback(
+    (grade: 'Kelas 7' | 'Kelas 8', chapter: string) => {
+      const chapterQs = questions.filter(
+        (q) => q.gradeLevel === grade && q.category === chapter
+      );
+      if (chapterQs.length === 0) return;
+
+      const allSelected = chapterQs.every((q) => effectiveEnabledQuestionSet.has(q.id));
+      const next = new Set(effectiveEnabledQuestionSet);
+
+      if (allSelected) {
+        for (const q of chapterQs) {
+          next.delete(q.id);
+        }
+        // Prevent disabling all chapters for a grade
+        const remainingForGrade = questions.filter(
+          (q) => q.gradeLevel === grade && next.has(q.id)
+        );
+        if (remainingForGrade.length === 0) {
+          setAuthError(`Minimal harus ada 1 Bab Materi ${grade} yang aktif untuk permainan.`);
+          return;
+        }
+      } else {
+        for (const q of chapterQs) {
+          next.add(q.id);
+        }
+      }
+      setAuthError(null);
+      handleUpdateEnabledQuestions(Array.from(next));
+    },
+    [questions, effectiveEnabledQuestionSet, handleUpdateEnabledQuestions]
+  );
+
+  const handleActivateOnlySingleChapterDirect = useCallback(
+    (grade: 'Kelas 7' | 'Kelas 8', chapter: string) => {
+      const otherGrade = grade === 'Kelas 7' ? 'Kelas 8' : 'Kelas 7';
+      const otherGradeIds = questions
+        .filter((q) => q.gradeLevel === otherGrade && effectiveEnabledQuestionSet.has(q.id))
+        .map((q) => q.id);
+      const targetChapterIds = questions
+        .filter((q) => q.gradeLevel === grade && q.category === chapter)
+        .map((q) => q.id);
+      setAuthError(null);
+      handleUpdateEnabledQuestions([...otherGradeIds, ...targetChapterIds]);
+    },
+    [questions, effectiveEnabledQuestionSet, handleUpdateEnabledQuestions]
+  );
+
+  const handleActivateAllChaptersForGradeDirect = useCallback(
+    (grade: 'Kelas 7' | 'Kelas 8') => {
+      const next = new Set(effectiveEnabledQuestionSet);
+      for (const q of questions) {
+        if (q.gradeLevel === grade) {
+          next.add(q.id);
+        }
+      }
+      setAuthError(null);
+      handleUpdateEnabledQuestions(Array.from(next));
+    },
+    [questions, effectiveEnabledQuestionSet, handleUpdateEnabledQuestions]
+  );
 
   // Active Versus Match for this student
   const activeMyVersusMatch = useMemo(() => {
@@ -1777,6 +2212,12 @@ export default function App() {
     const onKeyDown = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (e.code === 'KeyP') {
+        e.preventDefault();
+        soundEngine.playClick();
+        setIsGuideModalOpen((prev) => !prev);
+        return;
+      }
       if (!joinedRoom) return;
 
       if (e.code === 'Tab') {
@@ -1830,7 +2271,8 @@ export default function App() {
         localPlayerColor={avatarColor}
         localPlayerRole={localRole}
         players={classPlayers}
-        materials={materials}
+        materials={activeMaterials}
+        questions={questions.filter((q) => effectiveEnabledQuestionSet.has(q.id))}
         currentQuestion={currentQuestion}
         teleportCommand={teleportCommand}
         localChatBubble={localChatBubble}
@@ -1855,9 +2297,30 @@ export default function App() {
               MTsN 14 Jakarta Timur (Halim PK) · Azhary Mardhani, S.Kom
             </div>
 
-            <div className="flex items-center gap-1.5 sm:gap-2">
+            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
               <button
-                onClick={() => setIsMaterialModalOpen(true)}
+                onClick={() => {
+                  soundEngine.playClick();
+                  setIsGuideModalOpen(true);
+                }}
+                className="flex items-center gap-1 px-2.5 sm:px-3.5 py-1.5 sm:py-2 text-[11px] sm:text-xs font-extrabold text-slate-950 bg-emerald-400 hover:bg-emerald-300 border border-emerald-300 rounded-lg transition-colors whitespace-nowrap shrink-0 shadow-sm"
+              >
+                <HelpCircle className="w-3.5 h-3.5" />
+                <span>Petunjuk Permainan</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  soundEngine.playClick();
+                  if (isTeacherUnlocked) {
+                    setIsMaterialModalOpen(true);
+                  } else {
+                    setEntryTab('TEACHER');
+                    setPendingOpenBankSoalAfterAuth(true);
+                    setPendingOpenAnalysisAfterAuth(false);
+                    setAuthError(null);
+                  }
+                }}
                 className="flex items-center gap-1 px-2.5 sm:px-3.5 py-1.5 sm:py-2 text-[11px] sm:text-xs font-semibold text-slate-100 bg-slate-900/95 hover:bg-slate-800 border border-slate-700 rounded-lg transition-colors whitespace-nowrap shrink-0"
               >
                 <BookOpen className="w-3.5 h-3.5 text-amber-400" />
@@ -1865,11 +2328,21 @@ export default function App() {
               </button>
 
               <button
-                onClick={() => setIsAnalysisPreviewOpen(true)}
+                onClick={() => {
+                  soundEngine.playClick();
+                  if (isTeacherUnlocked) {
+                    setIsAnalysisPreviewOpen(true);
+                  } else {
+                    setEntryTab('TEACHER');
+                    setPendingOpenAnalysisAfterAuth(true);
+                    setPendingOpenBankSoalAfterAuth(false);
+                    setAuthError(null);
+                  }
+                }}
                 className="flex items-center gap-1 px-2.5 sm:px-3.5 py-1.5 sm:py-2 text-[11px] sm:text-xs font-semibold text-slate-100 bg-slate-900/95 hover:bg-slate-800 border border-slate-700 rounded-lg transition-colors whitespace-nowrap shrink-0"
               >
                 <BarChart3 className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Analisis Soal</span>
+                <span>Analisis Soal (Guru)</span>
               </button>
 
               <button
@@ -2014,7 +2487,10 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => {
+                    soundEngine.playClick();
                     setEntryTab('STUDENT');
+                    setPendingOpenBankSoalAfterAuth(false);
+                    setPendingOpenAnalysisAfterAuth(false);
                     setAuthError(null);
                   }}
                   className={`flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-lg text-[11px] sm:text-xs font-bold transition-colors whitespace-nowrap shrink-0 ${
@@ -2029,7 +2505,10 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => {
+                    soundEngine.playClick();
                     setEntryTab('TEACHER');
+                    setPendingOpenBankSoalAfterAuth(false);
+                    setPendingOpenAnalysisAfterAuth(false);
                     setAuthError(null);
                   }}
                   className={`flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-lg text-[11px] sm:text-xs font-bold transition-colors whitespace-nowrap shrink-0 ${
@@ -2046,9 +2525,9 @@ export default function App() {
               {entryTab === 'STUDENT' ? (
                 <form onSubmit={handleStudentJoinRoom} className="space-y-3.5">
                   <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5">
-                    <div className="sm:col-span-3">
+                    <div className="sm:col-span-2">
                       <label className="block text-xs font-semibold text-amber-400 mb-1">
-                        Kode Room Kelas
+                        Kode Room
                       </label>
                       <input
                         type="text"
@@ -2056,11 +2535,11 @@ export default function App() {
                         value={roomCodeInput}
                         onChange={(e) => setRoomCodeInput(normalizePin(e.target.value))}
                         placeholder="MTN14"
-                        className="w-full px-3 py-2 text-base font-mono font-bold tracking-widest uppercase bg-slate-950 border border-amber-600/80 rounded-xl text-amber-300 focus:outline-none focus:border-amber-400 text-center"
+                        className="w-full px-2.5 py-2 text-base font-mono font-bold tracking-widest uppercase bg-slate-950 border border-amber-600/80 rounded-xl text-amber-300 focus:outline-none focus:border-amber-400 text-center"
                       />
                     </div>
 
-                    <div className="sm:col-span-6">
+                    <div className="sm:col-span-4">
                       <label className="block text-xs font-semibold text-slate-300 mb-1">
                         Nama Lengkap Siswa
                       </label>
@@ -2083,16 +2562,47 @@ export default function App() {
                         onChange={(e) => setStudentClass(e.target.value)}
                         className="w-full px-3 py-2 text-sm bg-slate-950 border border-slate-800 rounded-xl text-slate-100 focus:outline-none focus:border-emerald-500"
                       >
-                        <option value="Kelas 7A">Kelas 7A</option>
-                        <option value="Kelas 7B">Kelas 7B</option>
-                        <option value="Kelas 7C">Kelas 7C</option>
-                        <option value="Kelas 8A">Kelas 8A</option>
-                        <option value="Kelas 8B">Kelas 8B</option>
-                        <option value="Kelas 8C">Kelas 8C</option>
-                        <option value="Kelas 9A">Kelas 9A</option>
-                        <option value="Kelas 9B">Kelas 9B</option>
-                        <option value="Kelas 9C">Kelas 9C</option>
+                        <optgroup label="Kelas 7 (7A – 7G)">
+                          <option value="Kelas 7A">Kelas 7A</option>
+                          <option value="Kelas 7B">Kelas 7B</option>
+                          <option value="Kelas 7C">Kelas 7C</option>
+                          <option value="Kelas 7D">Kelas 7D</option>
+                          <option value="Kelas 7E">Kelas 7E</option>
+                          <option value="Kelas 7F">Kelas 7F</option>
+                          <option value="Kelas 7G">Kelas 7G</option>
+                        </optgroup>
+                        <optgroup label="Kelas 8 (8A – 8H)">
+                          <option value="Kelas 8A">Kelas 8A</option>
+                          <option value="Kelas 8B">Kelas 8B</option>
+                          <option value="Kelas 8C">Kelas 8C</option>
+                          <option value="Kelas 8D">Kelas 8D</option>
+                          <option value="Kelas 8E">Kelas 8E</option>
+                          <option value="Kelas 8F">Kelas 8F</option>
+                          <option value="Kelas 8G">Kelas 8G</option>
+                          <option value="Kelas 8H">Kelas 8H</option>
+                        </optgroup>
+                        <optgroup label="Kelas 9 (9A – 9E)">
+                          <option value="Kelas 9A">Kelas 9A</option>
+                          <option value="Kelas 9B">Kelas 9B</option>
+                          <option value="Kelas 9C">Kelas 9C</option>
+                          <option value="Kelas 9D">Kelas 9D</option>
+                          <option value="Kelas 9E">Kelas 9E</option>
+                        </optgroup>
                       </select>
+                    </div>
+
+                    <div className="sm:col-span-3">
+                      <label className="block text-xs font-semibold text-amber-300 mb-1">
+                        Status CBT Aturan Guru
+                      </label>
+                      <div className="w-full px-3 py-2 text-xs font-extrabold bg-slate-950 border border-amber-600/80 rounded-xl text-amber-300 truncate flex items-center gap-1">
+                        <span>🔒</span>
+                        <span>
+                          {questionCountLimit > 0
+                            ? `${questionCountLimit} Soal per Sesi`
+                            : `Semua ${activeQuestions.length} Soal Aktif`}
+                        </span>
+                      </div>
                     </div>
                   </div>
 
@@ -2191,56 +2701,346 @@ export default function App() {
                     <span>Masuk ke Open-World 3D MTsN 14 Halim ({roomCodeInput || 'MTN14'})</span>
                   </button>
                 </form>
+              ) : !isTeacherUnlocked ? (
+                <form
+                  onSubmit={handleVerifyTeacherPassword}
+                  className="p-4 sm:p-6 rounded-2xl bg-slate-950/95 border-2 border-amber-500/70 space-y-4 max-w-xl mx-auto my-2 shadow-xl"
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="w-11 h-11 rounded-2xl bg-amber-500/20 border border-amber-400/60 flex items-center justify-center shrink-0">
+                      <ShieldCheck className="w-6 h-6 text-amber-400" />
+                    </div>
+                    <div>
+                      <div className="text-[11px] font-mono uppercase tracking-wider text-amber-400 font-bold">
+                        Otorisasi Khusus Guru Informatika
+                      </div>
+                      <h3 className="text-base sm:text-lg font-extrabold text-white">
+                        Masukkan Password Akses Guru
+                      </h3>
+                      <p className="text-xs text-slate-300 mt-0.5 leading-relaxed">
+                        {pendingOpenBankSoalAfterAuth
+                          ? 'Verifikasi password guru diperlukan sebelum membuka Pengaturan Bank Soal & Bab Materi.'
+                          : pendingOpenAnalysisAfterAuth
+                          ? 'Menu Analisis Soal & Rekap Nilai CBT hanya dapat diakses oleh Guru. Silakan masukkan password akses guru.'
+                          : 'Menu Pengaturan Guru (Aktivasi Bab Materi, Jumlah Soal Ujian, Bank Soal, Analisis Soal, dan Kontrol Kelas 3D) dilindungi password.'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-amber-300 mb-1.5">
+                      Password Akses Guru (Azhary Mardhani, S.Kom)
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        type={showTeacherPassword ? 'text' : 'password'}
+                        required
+                        autoFocus
+                        value={teacherPasswordInput}
+                        onChange={(e) => {
+                          setTeacherPasswordInput(e.target.value);
+                          if (authError) setAuthError(null);
+                        }}
+                        placeholder="Ketik password akses guru..."
+                        className="w-full px-3.5 py-2.5 text-sm font-mono bg-slate-900 border-2 border-amber-500/80 rounded-xl text-amber-200 placeholder-slate-500 focus:outline-none focus:border-amber-400"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowTeacherPassword((prev) => !prev)}
+                        className="px-3.5 py-2.5 text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl whitespace-nowrap shrink-0 transition-colors"
+                      >
+                        {showTeacherPassword ? 'Sembunyikan' : 'Lihat Password'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {authError && (
+                    <div className="text-xs font-bold text-rose-300 bg-rose-950/80 border border-rose-700 px-3.5 py-2.5 rounded-xl">
+                      {authError}
+                    </div>
+                  )}
+
+                  <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEntryTab('STUDENT');
+                        setPendingOpenBankSoalAfterAuth(false);
+                        setPendingOpenAnalysisAfterAuth(false);
+                        setAuthError(null);
+                      }}
+                      className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-colors"
+                    >
+                      Kembali ke Menu Siswa
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs sm:text-sm font-black flex items-center gap-1.5 shadow-lg transition-colors"
+                    >
+                      <KeyRound className="w-4 h-4" />
+                      <span>Buka Akses Menu Guru</span>
+                    </button>
+                  </div>
+                </form>
               ) : (
                 <form onSubmit={handleTeacherOpenRoom} className="space-y-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2 rounded-xl bg-emerald-950/60 border border-emerald-500/60">
+                    <div className="flex items-center gap-2 text-xs font-bold text-emerald-300">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <span>Akses Guru Terverifikasi — Azhary Mardhani, S.Kom</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsTeacherUnlocked(false);
+                        setTeacherPasswordInput('');
+                        setAuthError(null);
+                      }}
+                      className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-rose-950 text-slate-300 hover:text-rose-300 border border-slate-700 text-[11px] font-bold transition-colors"
+                    >
+                      Kunci Kembali Menu Guru
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div>
                       <label className="block text-xs font-semibold text-amber-400 mb-1">
-                        Kode Room Kelas (Bagikan ke Siswa)
+                        Kode Room Kelas
                       </label>
-                      <div className="flex gap-2">
+                      <div className="flex gap-1.5">
                         <input
                           type="text"
                           required
                           value={teacherRoomCode}
                           onChange={(e) => setTeacherRoomCode(normalizePin(e.target.value))}
-                          className="w-full px-3.5 py-2 text-base font-mono font-bold uppercase bg-slate-950 border border-amber-700/80 rounded-xl text-amber-300"
+                          className="w-full px-3 py-2 text-base font-mono font-bold uppercase bg-slate-950 border border-amber-700/80 rounded-xl text-amber-300"
                         />
                         <button
                           type="button"
                           onClick={() =>
                             setTeacherRoomCode(`14${Math.floor(100 + Math.random() * 900)}`)
                           }
-                          className="px-3 py-2 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl whitespace-nowrap shrink-0"
+                          className="px-2.5 py-2 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl whitespace-nowrap shrink-0"
                         >
-                          Kode Acak
+                          Acak
                         </button>
                       </div>
                     </div>
 
                     <div>
                       <label className="block text-xs font-semibold text-slate-300 mb-1">
-                        Modul Materi yang Diujikan pada Pos Guru
+                        Filter Cepat Bab Materi (Sesuai Bab Aktif)
                       </label>
                       <select
                         value={selectedCategory}
-                        onChange={(e) => setSelectedCategory(e.target.value)}
+                        onChange={(e) => handleTeacherCategoryChange(e.target.value)}
                         className="w-full px-3 py-2.5 text-xs bg-slate-950 border border-slate-800 rounded-xl text-slate-100"
                       >
-                        <option value="Semua Materi">Semua Materi ({questions.length} Soal)</option>
-                        <option value="Berpikir Komputasional">Berpikir Komputasional</option>
-                        <option value="Sistem Komputer">Sistem Komputer</option>
-                        <option value="Jaringan Komputer & Internet">
-                          Jaringan Komputer & Internet
+                        <option value="Semua Materi">
+                          Semua Bab Aktif ({activeChaptersKelas7.length + activeChaptersKelas8.length} Bab · {teacherActiveQuestions.length} Soal)
                         </option>
-                        <option value="Algoritma & Pemrograman">Algoritma & Pemrograman</option>
-                        <option value="Analisis Data">Analisis Data</option>
-                        <option value="Dampak Sosial & Keamanan Siber">
-                          Dampak Sosial & Keamanan Siber
-                        </option>
+                        {activeChaptersKelas7.length > 0 && (
+                          <optgroup
+                            label={`Kurikulum Kelas 7 (${activeChaptersKelas7.length} Bab Aktif)`}
+                          >
+                            {activeChaptersKelas7.map((ch) => (
+                              <option key={`k7-${ch}`} value={ch}>
+                                {ch}
+                              </option>
+                            ))}
+                          </optgroup>
+                        )}
+                        {activeChaptersKelas8.length > 0 && (
+                          <optgroup
+                            label={`Kurikulum Kelas 8 (${activeChaptersKelas8.length} Bab Aktif)`}
+                          >
+                            {activeChaptersKelas8.map((ch) => (
+                              <option key={`k8-${ch}`} value={ch}>
+                                {ch}
+                              </option>
+                            ))}
+                          </optgroup>
+                        )}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-emerald-400 mb-1">
+                        Pilih Banyaknya Soal Ujian
+                      </label>
+                      <select
+                        value={questionCountLimit}
+                        onChange={(e) => handleUpdateQuestionCountLimit(Number(e.target.value))}
+                        className="w-full px-3 py-2.5 text-xs font-bold bg-slate-950 border border-emerald-600/80 rounded-xl text-emerald-300"
+                      >
+                        <option value={5}>5 Butir Soal</option>
+                        <option value={10}>10 Butir Soal</option>
+                        <option value={15}>15 Butir Soal</option>
+                        <option value={20}>20 Butir Soal</option>
+                        <option value={25}>25 Butir Soal</option>
+                        <option value={30}>30 Butir Soal</option>
+                        <option value={40}>40 Butir Soal</option>
+                        <option value={50}>50 Butir Soal</option>
+                        <option value={0}>Semua Soal Aktif</option>
                       </select>
                     </div>
                   </div>
+
+                  {/* MENU AKTIVASI BAB MATERI PERMAINAN (GURU DAPAT MENYESUAIKAN BAB AKTIF ON/OFF) */}
+                  <div className="p-3.5 sm:p-4 rounded-2xl bg-slate-950/95 border-2 border-amber-500/50 space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-2.5">
+                      <div>
+                        <div className="text-[11px] font-mono uppercase tracking-wider text-amber-300 font-extrabold">
+                          ⚙️ MENU AKTIVASI BAB MATERI PERMAINAN (ON / OFF)
+                        </div>
+                        <p className="text-xs text-slate-300 mt-0.5">
+                          Klik tombol <strong>AKTIF / NONAKTIF</strong> pada bab di bawah untuk memilih bab materi mana saja yang dimainkan siswa:
+                        </p>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {(['Kelas 7', 'Kelas 8'] as const).map((gTab) => {
+                          const chaps = gTab === 'Kelas 7' ? KELAS_7_CHAPTERS : KELAS_8_CHAPTERS;
+                          const activeChapCount = chaps.filter((ch) =>
+                            questions.some(
+                              (q) =>
+                                q.gradeLevel === gTab &&
+                                q.category === ch &&
+                                effectiveEnabledQuestionSet.has(q.id)
+                            )
+                          ).length;
+                          return (
+                            <button
+                              key={gTab}
+                              type="button"
+                              onClick={() => setTeacherChapterGradeTab(gTab)}
+                              className={`px-3 py-1.5 rounded-xl text-xs font-extrabold border transition-colors ${
+                                teacherChapterGradeTab === gTab
+                                  ? gTab === 'Kelas 7'
+                                    ? 'bg-emerald-600 text-white border-emerald-400'
+                                    : 'bg-sky-600 text-white border-sky-400'
+                                  : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-white'
+                              }`}
+                            >
+                              {gTab} ({activeChapCount}/9 Bab Aktif)
+                            </button>
+                          );
+                        })}
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleActivateAllChaptersForGradeDirect(teacherChapterGradeTab)
+                          }
+                          className="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-emerald-700 text-emerald-300 hover:text-white border border-slate-700 text-xs font-bold transition-colors"
+                        >
+                          Aktifkan Semua {teacherChapterGradeTab}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Grid 9 Bab Materi untuk Kelas 7 atau Kelas 8 */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 max-h-56 overflow-y-auto pr-1">
+                      {(teacherChapterGradeTab === 'Kelas 7'
+                        ? KELAS_7_CHAPTERS
+                        : KELAS_8_CHAPTERS
+                      ).map((chap) => {
+                        const chapQs = questions.filter(
+                          (q) => q.gradeLevel === teacherChapterGradeTab && q.category === chap
+                        );
+                        const activeCount = chapQs.filter((q) =>
+                          effectiveEnabledQuestionSet.has(q.id)
+                        ).length;
+                        const isActive = activeCount > 0;
+
+                        return (
+                          <div
+                            key={`login-chap-${teacherChapterGradeTab}-${chap}`}
+                            className={`p-2.5 rounded-xl border transition-all flex flex-col justify-between gap-2 ${
+                              isActive
+                                ? teacherChapterGradeTab === 'Kelas 7'
+                                  ? 'bg-emerald-950/60 border-emerald-500/80 text-white'
+                                  : 'bg-sky-950/60 border-sky-500/80 text-white'
+                                : 'bg-slate-900/70 border-slate-800 text-slate-400 opacity-75'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleToggleTeacherChapterDirect(teacherChapterGradeTab, chap)
+                                }
+                                className="text-left min-w-0 flex-1"
+                              >
+                                <div className="text-[11px] font-bold leading-snug line-clamp-2">
+                                  {chap}
+                                </div>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleToggleTeacherChapterDirect(teacherChapterGradeTab, chap)
+                                }
+                                className={`px-2 py-0.5 rounded text-[10px] font-mono font-extrabold shrink-0 border transition-colors ${
+                                  isActive
+                                    ? 'bg-emerald-400 text-slate-950 border-emerald-200'
+                                    : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'
+                                }`}
+                              >
+                                {isActive ? 'AKTIF' : 'OFF'}
+                              </button>
+                            </div>
+
+                            <div className="flex items-center justify-between gap-1 pt-1 border-t border-slate-800/80 text-[10px]">
+                              <span className="font-mono text-slate-400">
+                                {activeCount}/{chapQs.length} Soal
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleActivateOnlySingleChapterDirect(
+                                    teacherChapterGradeTab,
+                                    chap
+                                  )
+                                }
+                                className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-amber-400 hover:text-slate-950 font-bold text-amber-300 transition-colors"
+                              >
+                                Hanya Bab Ini
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-800">
+                      <p className="text-xs text-slate-300">
+                        Status Permainan:{' '}
+                        <strong className="text-emerald-300">
+                          {questionCountLimit > 0
+                            ? `${questionCountLimit} Butir Soal per Sesi`
+                            : `${teacherActiveQuestions.length} dari ${questions.length} butir soal aktif`}
+                        </strong>
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAuthError(null);
+                          setIsMaterialModalOpen(true);
+                        }}
+                        className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs whitespace-nowrap shrink-0 flex items-center gap-1.5 shadow-md transition-colors"
+                      >
+                        <BookOpen className="w-4 h-4" />
+                        <span>Buka Pengaturan Lengkap Bab & Butir Soal</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {authError && (
+                    <div className="text-xs font-bold text-rose-300 bg-rose-950/70 border border-rose-700 px-3.5 py-2.5 rounded-xl">
+                      {authError}
+                    </div>
+                  )}
 
                   <p className="text-xs text-slate-400 leading-relaxed">
                     Sebagai <strong>Host Guru (Azhary Mardhani, S.Kom)</strong>, Bapak dapat
@@ -2273,6 +3073,28 @@ export default function App() {
          ==================================================================== */}
       {joinedRoom && (
         <>
+          {/* HUD Active Building Navigation Banner for Students */}
+          {joinedRoom && localRole !== 'TEACHER' && nearestActiveTargetPost && (
+            <div className="fixed top-12 sm:top-14 left-1/2 -translate-x-1/2 z-20 pointer-events-auto w-[94vw] max-w-xl">
+              <div className="px-3.5 py-1.5 sm:py-2 bg-slate-900/95 border-2 border-emerald-500 rounded-xl shadow-2xl flex flex-wrap items-center justify-between gap-2 text-xs">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                  <span className="font-extrabold text-emerald-300 truncate">
+                    BAB AKTIF: {activeCategoriesSet.slice(0, 2).join(', ')}
+                    {activeCategoriesSet.length > 2 ? '...' : ''}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5 font-mono text-amber-300 font-bold bg-amber-950/90 px-2.5 py-1 rounded-lg border border-amber-600/70 shrink-0">
+                  <span className="text-[11px] text-amber-200">Tujuan Gedung:</span>
+                  <span className="text-white font-black truncate max-w-[140px]">
+                    {nearestActiveTargetPost.buildingName.split(' ')[0]} {nearestActiveTargetPost.buildingName.split(' ')[1] || ''}
+                  </span>
+                  <span className="text-amber-400 font-extrabold">{activeBuildingDistMeters}m {activeBuildingArrow}</span>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Toast Pemulihan Sesi Otomatis */}
           {resumedSessionToast && (
             <div className="fixed top-14 sm:top-20 left-1/2 -translate-x-1/2 z-30 w-[92vw] max-w-lg pointer-events-none">
@@ -2363,6 +3185,16 @@ export default function App() {
                         {unreadChatCount}
                       </span>
                     )}
+                  </button>
+                  <button
+                    onClick={() => {
+                      soundEngine.playClick();
+                      setIsGuideModalOpen(true);
+                    }}
+                    className="flex items-center gap-1 px-1.5 sm:px-2 py-1 rounded-lg bg-amber-500/20 border border-amber-400/70 text-[10px] font-bold text-amber-300 shrink-0"
+                  >
+                    <HelpCircle className="w-3 h-3" />
+                    <span>Petunjuk</span>
                   </button>
                 </div>
 
@@ -2706,13 +3538,25 @@ export default function App() {
             className="fixed left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-1.5 px-1 pointer-events-none"
           >
             {nearbyTeacherPost && (
-              <div className="w-full p-2 sm:p-3 bg-slate-900/95 border-2 border-amber-400 rounded-xl sm:rounded-2xl shadow-2xl flex items-center justify-between gap-2 pointer-events-auto">
+              <div className={`w-full p-2 sm:p-3 bg-slate-900/95 border-2 rounded-xl sm:rounded-2xl shadow-2xl flex items-center justify-between gap-2 pointer-events-auto ${
+                localRole === 'TEACHER' || activeTargetPosts.some((p) => p.index === nearbyTeacherPost.index)
+                  ? 'border-amber-400'
+                  : 'border-rose-500'
+              }`}>
                 <div className="flex items-center gap-2 min-w-0">
-                  <div className="p-1.5 sm:p-2 rounded-lg bg-amber-500/20 text-amber-300 shrink-0">
+                  <div className={`p-1.5 sm:p-2 rounded-lg shrink-0 ${
+                    localRole === 'TEACHER' || activeTargetPosts.some((p) => p.index === nearbyTeacherPost.index)
+                      ? 'bg-amber-500/20 text-amber-300'
+                      : 'bg-rose-500/20 text-rose-400'
+                  }`}>
                     <GraduationCap className="w-4 h-4 sm:w-5 sm:h-5" />
                   </div>
                   <div className="min-w-0">
-                    <div className="text-[9px] sm:text-[10px] font-mono font-bold text-amber-400 uppercase truncate">
+                    <div className={`text-[9px] sm:text-[10px] font-mono font-bold uppercase truncate ${
+                      localRole === 'TEACHER' || activeTargetPosts.some((p) => p.index === nearbyTeacherPost.index)
+                        ? 'text-amber-400'
+                        : 'text-rose-400'
+                    }`}>
                       {nearbyTeacherPost.buildingName}
                     </div>
                     <div className="text-xs sm:text-sm font-extrabold text-slate-100 truncate">
@@ -2721,15 +3565,27 @@ export default function App() {
                   </div>
                 </div>
 
-                <button
-                  onClick={() => {
-                    soundEngine.playDash();
-                    setActiveTeacherModalIndex(nearbyTeacherPost.index);
-                  }}
-                  className="px-2.5 sm:px-4 py-1.5 sm:py-2 text-[11px] sm:text-xs font-extrabold text-slate-950 bg-amber-400 hover:bg-amber-300 rounded-lg sm:rounded-xl shadow-lg transition-colors whitespace-nowrap shrink-0"
-                >
-                  Jawab Soal [F]
-                </button>
+                {localRole === 'TEACHER' || activeTargetPosts.some((p) => p.index === nearbyTeacherPost.index) ? (
+                  <button
+                    onClick={() => {
+                      soundEngine.playDash();
+                      setActiveTeacherModalIndex(nearbyTeacherPost.index);
+                    }}
+                    className="px-2.5 sm:px-4 py-1.5 sm:py-2 text-[11px] sm:text-xs font-extrabold text-slate-950 bg-amber-400 hover:bg-amber-300 rounded-lg sm:rounded-xl shadow-lg transition-colors whitespace-nowrap shrink-0"
+                  >
+                    Jawab Soal [F]
+                  </button>
+                ) : (
+                  <button
+                    disabled={true}
+                    onClick={() => {
+                      soundEngine.playWrongAnswer();
+                    }}
+                    className="px-2.5 sm:px-4 py-1.5 sm:py-2 text-[11px] sm:text-xs font-extrabold text-slate-300 bg-slate-950/90 border border-rose-700/80 rounded-lg sm:rounded-xl shadow-lg cursor-not-allowed opacity-85 whitespace-nowrap shrink-0"
+                  >
+                    🔒 TERKUNCI (BAB OFF)
+                  </button>
+                )}
               </div>
             )}
 
@@ -2790,15 +3646,17 @@ export default function App() {
               <div className="pointer-events-auto w-full bg-slate-900/95 border border-slate-700/90 rounded-xl sm:rounded-2xl px-2.5 sm:px-4 py-1.5 sm:py-2.5 shadow-2xl flex items-center justify-between gap-1.5 sm:gap-2.5 overflow-x-auto">
                 {/* Left Quick Mission & Chat Actions */}
                 <div className="flex items-center gap-1.5 shrink-0">
-                  <button
-                    onClick={() => setActiveTeacherModalIndex(0)}
-                    className="flex items-center gap-1 px-2.5 sm:px-3.5 py-1.5 sm:py-2 text-[11px] sm:text-xs font-bold text-slate-950 bg-amber-400 hover:bg-amber-300 rounded-lg sm:rounded-xl transition-colors whitespace-nowrap shrink-0"
-                  >
-                    <GraduationCap className="w-3.5 h-3.5" />
-                    <span>
-                      Soal ({answeredQuestionIds.size}/{activeQuestions.length})
-                    </span>
-                  </button>
+                  {localRole === 'TEACHER' && (
+                    <button
+                      onClick={() => setActiveTeacherModalIndex(0)}
+                      className="flex items-center gap-1 px-2.5 sm:px-3.5 py-1.5 sm:py-2 text-[11px] sm:text-xs font-bold text-slate-950 bg-amber-400 hover:bg-amber-300 rounded-lg sm:rounded-xl transition-colors whitespace-nowrap shrink-0"
+                    >
+                      <GraduationCap className="w-3.5 h-3.5" />
+                      <span>
+                        Menu Guru ({answeredQuestionIds.size}/{activeQuestions.length})
+                      </span>
+                    </button>
+                  )}
 
                   <button
                     onClick={() => setIsChatOpen((prev) => !prev)}
@@ -2852,20 +3710,34 @@ export default function App() {
                   {localRole === 'TEACHER' && (
                     <button
                       onClick={() => setIsMaterialModalOpen(true)}
-                      className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 sm:py-2 text-[11px] sm:text-xs font-semibold text-slate-100 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg sm:rounded-xl transition-colors whitespace-nowrap shrink-0"
+                      className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 sm:py-2 text-[11px] sm:text-xs font-bold text-slate-950 bg-amber-400 hover:bg-amber-300 border border-amber-300 rounded-lg sm:rounded-xl transition-colors whitespace-nowrap shrink-0 shadow"
                     >
-                      <BookOpen className="w-3.5 h-3.5 text-amber-400" />
-                      <span>Kelola Bank Soal</span>
+                      <BookOpen className="w-3.5 h-3.5 text-slate-950" />
+                      <span>Pilih Materi & Soal ({activeQuestions.length})</span>
                     </button>
                   )}
 
                   <button
-                    onClick={handleFinishToAnalysis}
-                    className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 sm:py-2 text-[11px] sm:text-xs font-semibold text-slate-100 bg-emerald-700 hover:bg-emerald-600 border border-emerald-500 rounded-lg sm:rounded-xl transition-colors whitespace-nowrap shrink-0"
+                    onClick={() => {
+                      soundEngine.playClick();
+                      setIsGuideModalOpen(true);
+                    }}
+                    title="Buka Petunjuk Permainan [P]"
+                    className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 sm:py-2 text-[11px] sm:text-xs font-bold text-amber-200 bg-amber-950/90 hover:bg-amber-800 border border-amber-500/70 rounded-lg sm:rounded-xl transition-colors whitespace-nowrap shrink-0"
                   >
-                    <BarChart3 className="w-3.5 h-3.5 text-emerald-200" />
-                    <span>Analisis</span>
+                    <HelpCircle className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Petunjuk</span>
                   </button>
+
+                  {localRole === 'TEACHER' && (
+                    <button
+                      onClick={handleFinishToAnalysis}
+                      className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 sm:py-2 text-[11px] sm:text-xs font-semibold text-slate-100 bg-emerald-700 hover:bg-emerald-600 border border-emerald-500 rounded-lg sm:rounded-xl transition-colors whitespace-nowrap shrink-0"
+                    >
+                      <BarChart3 className="w-3.5 h-3.5 text-emerald-200" />
+                      <span>Analisis</span>
+                    </button>
+                  )}
 
                   <button
                     onClick={() => setIsMuted(soundEngine.toggleMute())}
@@ -2915,23 +3787,30 @@ export default function App() {
         isOpen={activeTeacherModalIndex !== null}
         teacherStationIndex={activeTeacherModalIndex ?? 0}
         questions={activeQuestions}
-        materials={materials}
+        materials={activeMaterials}
         answeredQuestionIds={answeredQuestionIds}
         missionPoints={displayedMp}
         localPlayerId={localPlayerIdRef.current}
         localPlayerName={studentName || 'Siswa MTsN 14'}
+        localPlayerClass={studentClass || 'Kelas 7A'}
+        isTeacher={localRole === 'TEACHER' || isTeacherUnlocked}
+        questionCountLimit={questionCountLimit}
+        onChangeQuestionCountLimit={handleUpdateQuestionCountLimit}
         onClose={() => setActiveTeacherModalIndex(null)}
         onSubmitTeacherAnswer={handleSubmitTeacherAnswer}
         onOpenFullAnalysis={() => {
           setActiveTeacherModalIndex(null);
-          handleFinishToAnalysis();
+          if (localRole === 'TEACHER' || isTeacherUnlocked) {
+            handleFinishToAnalysis();
+          }
         }}
       />
 
       {/* ====================================================================
-          6. LAPORAN ANALISIS KEMAMPUAN SISWA CBT (POST-GAME / TEACHER VIEW)
+          6. LAPORAN ANALISIS KEMAMPUAN SISWA CBT (KHUSUS GURU)
          ==================================================================== */}
-      {(roomStatus === 'FINISHED' || isAnalysisPreviewOpen) && (
+      {(localRole === 'TEACHER' || isTeacherUnlocked) &&
+        (roomStatus === 'FINISHED' || isAnalysisPreviewOpen) && (
         <ItemAnalysisView
           roomPin={activePin}
           questions={activeQuestions}
@@ -2953,22 +3832,36 @@ export default function App() {
             setIsAnalysisPreviewOpen(false);
             setIsMaterialModalOpen(true);
           }}
+          onResetLeaderboard={handleResetLeaderboardByTeacher}
         />
       )}
 
       {/* Floating Roblox Building Entrance Prompt Button */}
       {joinedRoom && nearbyEntranceBuilding && !activeBuildingInterior && activeTeacherModalIndex === null && (
         <div className="fixed bottom-20 sm:bottom-24 left-1/2 -translate-x-1/2 z-40 animate-bounce">
-          <button
-            onClick={() => {
-              soundEngine.playClick();
-              setActiveBuildingInterior(nearbyEntranceBuilding);
-            }}
-            className="flex items-center gap-3 px-6 py-3 rounded-2xl bg-gradient-to-r from-sky-500 via-cyan-500 to-blue-600 text-slate-950 font-black text-xs sm:text-sm font-mono uppercase tracking-wider shadow-2xl shadow-cyan-500/50 border-2 border-white/60 hover:scale-105 active:scale-95 transition-all"
-          >
-            <span className="text-xl">🚪</span>
-            <span>MASUK RUANGAN: {nearbyEntranceBuilding.buildingName.split(' ')[0]} {nearbyEntranceBuilding.buildingName.split(' ')[1] || ''} [TEKAN E / TAP]</span>
-          </button>
+          {localRole === 'TEACHER' || activeTargetPosts.some((p) => p.index === nearbyEntranceBuilding.index) ? (
+            <button
+              onClick={() => {
+                soundEngine.playClick();
+                setActiveBuildingInterior(nearbyEntranceBuilding);
+              }}
+              className="flex items-center gap-3 px-6 py-3 rounded-2xl bg-gradient-to-r from-sky-500 via-cyan-500 to-blue-600 text-slate-950 font-black text-xs sm:text-sm font-mono uppercase tracking-wider shadow-2xl shadow-cyan-500/50 border-2 border-white/60 hover:scale-105 active:scale-95 transition-all"
+            >
+              <span className="text-xl">🚪</span>
+              <span>MASUK RUANGAN: {nearbyEntranceBuilding.buildingName.split(' ')[0]} {nearbyEntranceBuilding.buildingName.split(' ')[1] || ''} [TEKAN E / TAP]</span>
+            </button>
+          ) : (
+            <button
+              disabled={true}
+              onClick={() => {
+                soundEngine.playWrongAnswer();
+              }}
+              className="flex items-center gap-3 px-6 py-3 rounded-2xl bg-slate-950/90 text-rose-300 font-black text-xs sm:text-sm font-mono uppercase tracking-wider shadow-2xl border-2 border-rose-600 cursor-not-allowed opacity-90"
+            >
+              <span className="text-xl">🔒</span>
+              <span>GEDUNG TERKUNCI (BAB NONAKTIF GURU)</span>
+            </button>
+          )}
         </div>
       )}
 
@@ -2976,6 +3869,8 @@ export default function App() {
       {activeBuildingInterior && (
         <BuildingInteriorModal
           building={activeBuildingInterior}
+          isBuildingActive={activeTargetPosts.some((p) => p.index === activeBuildingInterior.index)}
+          isTeacher={localRole === 'TEACHER' || isTeacherUnlocked}
           onClose={() => setActiveBuildingInterior(null)}
           onStartTeacherQuiz={() => {
             const post = activeBuildingInterior;
@@ -2993,10 +3888,43 @@ export default function App() {
         onClose={() => setIsMaterialModalOpen(false)}
         materials={materials}
         questions={questions}
+        enabledQuestionIds={enabledQuestionIds}
+        onUpdateEnabledQuestions={handleUpdateEnabledQuestions}
+        questionCountLimit={questionCountLimit}
+        onUpdateQuestionCountLimit={handleUpdateQuestionCountLimit}
         onSaveMaterial={handleSaveMaterial}
         onDeleteMaterial={handleDeleteMaterial}
         onSaveQuestion={handleSaveQuestion}
         onDeleteQuestion={handleDeleteQuestion}
+      />
+
+      {/* ====================================================================
+          8. MODAL SELEBRASI TIANG BENDERA & LEADERBOARD SELESAI CBT
+         ==================================================================== */}
+      <CompletionCeremonyModal
+        isOpen={isCompletionCeremonyOpen}
+        onClose={() => setIsCompletionCeremonyOpen(false)}
+        onOpenAnalysis={() => {
+          setIsCompletionCeremonyOpen(false);
+          if (localRole === 'TEACHER' || isTeacherUnlocked || isCbtCompleted) {
+            setIsAnalysisPreviewOpen(true);
+          }
+        }}
+        players={classPlayers}
+        localPlayerId={localPlayerIdRef.current}
+        localPlayerName={studentName || 'Siswa MTsN 14'}
+        localPlayerClass={studentClass || 'Kelas 7'}
+        localScore={localScore}
+        missionPoints={missionPoints}
+        totalQuestions={activeQuestions.length}
+      />
+
+      {/* ====================================================================
+          9. MODAL PETUNJUK PERMAINAN & KONTROL 3D
+         ==================================================================== */}
+      <GameGuideModal
+        isOpen={isGuideModalOpen}
+        onClose={() => setIsGuideModalOpen(false)}
       />
     </div>
   );
