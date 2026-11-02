@@ -1974,15 +1974,15 @@ export default function App() {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(
         JSON.stringify({
-          type: 'room:reset_leaderboard',
-          payload: { role: 'TEACHER', isTeacher: true },
+          type: 'room:reset_activities',
+          payload: { role: 'TEACHER', isTeacher: true, pin: activePin },
         })
       );
     }
-    fetch('/api/room/reset_leaderboard', {
+    fetch('/api/room/reset_activities', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ role: 'TEACHER', isTeacher: true }),
+      body: JSON.stringify({ role: 'TEACHER', isTeacher: true, pin: activePin }),
     })
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
@@ -1992,7 +1992,7 @@ export default function App() {
         }
       })
       .catch(() => {});
-  }, []);
+  }, [activePin]);
 
   const handleCopyRoomPin = () => {
     navigator.clipboard?.writeText(activePin).catch(() => {});

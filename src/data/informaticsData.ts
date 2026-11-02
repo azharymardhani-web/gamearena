@@ -115,6 +115,7 @@ export interface PlayerAnswerEvent {
   responseTimeMs: number;
   pointsEarned: number;
   playerTotalScoreAfter: number;
+  roomPin?: string;
 }
 
 export interface ItemAnalysisResult {

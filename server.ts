@@ -41,6 +41,7 @@ export interface ClassMapPlayer {
   lastChatTime?: number;
   lastUpdated: number;
   isRoamingPeer?: boolean;
+  roomPin?: string;
 }
 
 export interface RoomChatMessage {
@@ -52,6 +53,7 @@ export interface RoomChatMessage {
   senderColor: string;
   text: string;
   timestamp: number;
+  roomPin?: string;
 }
 
 export interface VersusQuestionItem {
@@ -407,23 +409,37 @@ function getActiveVersusMatches(): VersusMatchState[] {
 }
 
 function serializeArena(requestedPin?: string) {
+  const pin = normalizeRoomPin(requestedPin || arenaPin);
   const qs = getFilteredQuestions(arenaCategoryFilter);
   const now = Date.now();
   seedBotsInArena();
 
-  // Keep all bots + all human players active within the last 45 seconds in the live arena list
+  // Strict Room Code Isolation: Only players using the SAME room PIN created by the teacher see each other!
   const activePlayers: ClassMapPlayer[] = [];
   for (const [id, p] of arenaPlayers.entries()) {
-    if (p.isRoamingPeer || now - p.lastUpdated < 45000) {
-      activePlayers.push(p);
-    } else {
-      arenaPlayers.delete(id);
+    const pPin = normalizeRoomPin(p.roomPin || arenaPin);
+    if (p.isRoamingPeer || pPin === pin) {
+      if (p.isRoamingPeer || now - p.lastUpdated < 45000) {
+        activePlayers.push(p);
+      } else {
+        arenaPlayers.delete(id);
+      }
     }
   }
 
+  const roomChats = arenaChatMessages.filter(
+    (m) => !m.roomPin || normalizeRoomPin(m.roomPin) === pin
+  );
+  const roomVersus = getActiveVersusMatches().filter(
+    (m) => !m.pin || normalizeRoomPin(m.pin) === pin
+  );
+  const roomAnswers = globalAnswerHistory.filter(
+    (a) => !a.roomPin || normalizeRoomPin(a.roomPin) === pin
+  );
+
   return {
-    pin: requestedPin ? normalizeRoomPin(requestedPin) : arenaPin,
-    roomName: arenaRoomName,
+    pin,
+    roomName: `Kampus MTsN 14 Halim (${pin})`,
     teacherName: arenaTeacherName,
     hostId: 'teacher-default',
     status: arenaStatus,
@@ -434,9 +450,9 @@ function serializeArena(requestedPin?: string) {
     totalQuestions: qs.length,
     timeLeftSec: 60,
     players: activePlayers,
-    answers: globalAnswerHistory.slice(-200),
-    chatMessages: arenaChatMessages.slice(-50),
-    versusMatches: getActiveVersusMatches(),
+    answers: roomAnswers.slice(-200),
+    chatMessages: roomChats.slice(-50),
+    versusMatches: roomVersus,
   };
 }
 
@@ -448,6 +464,7 @@ function upsertPlayerInArena(payload: {
   role?: 'TEACHER' | 'STUDENT';
   characterPreset?: string;
   color?: string;
+  pin?: string;
   x?: number;
   y?: number;
   vx?: number;
@@ -461,6 +478,7 @@ function upsertPlayerInArena(payload: {
 }): ClassMapPlayer {
   const existing = arenaPlayers.get(payload.playerId);
   const spawn = computeSpawnPosition(payload.playerId);
+  const assignedPin = normalizeRoomPin(payload.pin || existing?.roomPin || arenaPin);
 
   const mergedAnsweredIds = Array.from(
     new Set([
@@ -524,6 +542,7 @@ function upsertPlayerInArena(payload: {
     lastChatTime: existing?.lastChatTime,
     lastUpdated: Date.now(),
     isRoamingPeer: false,
+    roomPin: assignedPin,
   };
 
   arenaPlayers.set(payload.playerId, updated);
@@ -696,18 +715,21 @@ async function startServer() {
     }
   }, 25000);
 
-  function broadcastToLocalWs(payload: unknown) {
+  function broadcastToLocalWs(payload: unknown, targetPin?: string) {
     const message = JSON.stringify(payload);
-    for (const client of wss.clients) {
+    const normTarget = targetPin ? normalizeRoomPin(targetPin) : null;
+    for (const [client, meta] of clientPlayerMap.entries()) {
       if (client.readyState === WebSocket.OPEN) {
-        client.send(message);
+        if (!normTarget || normalizeRoomPin(meta.pin) === normTarget) {
+          client.send(message);
+        }
       }
     }
   }
 
-  // Broadcast to ALL connected WebSocket clients AND Cross-Container Cloud Bridge
-  function broadcastToArena(payload: any) {
-    broadcastToLocalWs(payload);
+  // Broadcast to connected WebSocket clients in the same room AND Cross-Container Cloud Bridge
+  function broadcastToArena(payload: any, targetPin?: string) {
+    broadcastToLocalWs(payload, targetPin);
     if (payload && typeof payload === 'object' && payload.type) {
       if (
         payload.type === 'player:moved' &&
@@ -718,6 +740,8 @@ async function startServer() {
         publishToCloudBridge('chat:message', payload.payload);
       } else if (payload.type === 'versus:update') {
         publishToCloudBridge('versus:update', payload.payload);
+      } else if (payload.type === 'room:activities_reset') {
+        publishToCloudBridge('room:activities_reset', payload.payload);
       }
     }
   }
@@ -897,35 +921,62 @@ async function startServer() {
     });
   });
 
-  // Teacher-Only Reset Leaderboard & Student Score Data Endpoint
-  app.post('/api/room/reset_leaderboard', (req, res) => {
-    const { role, isTeacher } = req.body || {};
+  // Teacher-Only Endpoint: Complete/Finish All Active Student Activities & Reset Arena to Default
+  app.post('/api/room/reset_activities', (req, res) => {
+    const { role, isTeacher, pin: rawPin } = req.body || {};
     if (role !== 'TEACHER' && !isTeacher) {
       res.status(403).json({
-        error: 'Akses ditolak! Hanya Guru yang dapat menghapus data nilai dan papan peringkat siswa.',
+        error: 'Akses ditolak! Hanya Guru yang berhak menyelesaikan aktivitas siswa & mereset arena.',
       });
       return;
     }
 
-    globalAnswerHistory = [];
-    for (const p of arenaPlayers.values()) {
-      if (!p.isRoamingPeer) {
+    const targetPin = normalizeRoomPin(rawPin || arenaPin);
+
+    // 1. Reset progress & positions for all human students in this room
+    for (const [id, p] of arenaPlayers.entries()) {
+      if (!p.isRoamingPeer && normalizeRoomPin(p.roomPin || arenaPin) === targetPin) {
         p.score = 0;
+        p.missionPoints = 100;
+        p.collectedItemsCount = 0;
         p.answeredCount = 0;
         p.answeredQuestionIds = [];
-        p.collectedItemsCount = 0;
-        p.missionPoints = 100;
+        p.x = SPAWN_CENTER_X;
+        p.y = SPAWN_CENTER_Y;
+        p.facingAngle = Math.PI;
+        p.jumpY = 0;
         p.lastUpdated = Date.now();
       }
     }
 
+    // 2. Clear active versus match duels for this room
+    for (const [mId, match] of arenaVersusMatches.entries()) {
+      if (normalizeRoomPin(match.pin || arenaPin) === targetPin) {
+        arenaVersusMatches.delete(mId);
+      }
+    }
+
+    // 3. Reset room status to PLAYING (fresh start)
+    arenaStatus = 'PLAYING';
+
     schedulePersistStateToDisk();
-    const serialized = serializeArena(arenaPin);
-    broadcastToArena({ type: 'room:state', payload: serialized });
+
+    const serialized = serializeArena(targetPin);
+    broadcastToArena(
+      {
+        type: 'room:activities_reset',
+        payload: {
+          pin: targetPin,
+          message: 'Guru telah menyelesaikan seluruh aktivitas siswa & mereset arena ke posisi semula.',
+          room: serialized,
+        },
+      },
+      targetPin
+    );
 
     res.json({
       ok: true,
-      message: 'Papan peringkat dan seluruh data jawaban siswa berhasil direset oleh Guru.',
+      message: 'Seluruh aktivitas siswa berhasil diselesaikan dan arena dikembalikan ke posisi awal.',
       room: serialized,
     });
   });
@@ -1528,21 +1579,36 @@ async function startServer() {
           arenaStatus = 'PLAYING';
           schedulePersistStateToDisk();
           broadcastToArena({ type: 'room:state', payload: serializeArena(arenaPin) });
-        } else if (type === 'room:reset_leaderboard') {
+        } else if (type === 'room:reset_activities') {
           if (payload?.role === 'TEACHER' || payload?.isTeacher) {
-            globalAnswerHistory = [];
-            for (const p of arenaPlayers.values()) {
-              if (!p.isRoamingPeer) {
+            const targetPin = normalizeRoomPin(payload?.pin || arenaPin);
+            // 1. Reset progress & positions for all human students in this room
+            for (const [id, p] of arenaPlayers.entries()) {
+              if (!p.isRoamingPeer && normalizeRoomPin(p.roomPin || arenaPin) === targetPin) {
                 p.score = 0;
+                p.missionPoints = 100;
+                p.collectedItemsCount = 0;
                 p.answeredCount = 0;
                 p.answeredQuestionIds = [];
-                p.collectedItemsCount = 0;
-                p.missionPoints = 100;
+                p.x = SPAWN_CENTER_X;
+                p.y = SPAWN_CENTER_Y;
+                p.facingAngle = Math.PI;
+                p.jumpY = 0;
                 p.lastUpdated = Date.now();
               }
             }
+            // 2. Clear versus matches for this room
+            for (const [mId, match] of arenaVersusMatches.entries()) {
+              if (normalizeRoomPin(match.pin || arenaPin) === targetPin) {
+                arenaVersusMatches.delete(mId);
+              }
+            }
+            // 3. Reset room status
+            arenaStatus = 'PLAYING';
+
             schedulePersistStateToDisk();
-            broadcastToArena({ type: 'room:state', payload: serializeArena(arenaPin) });
+            const serialized = serializeArena(targetPin);
+            broadcastToArena({ type: 'room:activities_reset', payload: { pin: targetPin, message: 'Reset by Teacher', room: serialized } }, targetPin);
           }
         }
       } catch {
