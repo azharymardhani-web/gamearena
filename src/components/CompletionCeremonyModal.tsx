@@ -17,6 +17,7 @@ interface CompletionCeremonyModalProps {
   isOpen: boolean;
   onClose: () => void;
   onOpenAnalysis: () => void;
+  onResetAndLeave?: () => void;
   players: MapPlayerEntity[];
   localPlayerId: string;
   localPlayerName: string;
@@ -30,6 +31,7 @@ export const CompletionCeremonyModal: React.FC<CompletionCeremonyModalProps> = (
   isOpen,
   onClose,
   onOpenAnalysis,
+  onResetAndLeave,
   players,
   localPlayerId,
   localPlayerName,
@@ -225,16 +227,16 @@ export const CompletionCeremonyModal: React.FC<CompletionCeremonyModalProps> = (
           </div>
 
           {/* Action Buttons */}
-          <div className="flex flex-wrap items-center justify-between gap-2.5 pt-1">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
             <button
               onClick={() => {
                 soundEngine.playClick();
                 onClose();
               }}
-              className="flex-1 py-3 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-extrabold text-xs flex items-center justify-center gap-2 border border-slate-700 transition-colors"
+              className="py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-extrabold text-xs flex items-center justify-center gap-1.5 border border-slate-700 transition-colors"
             >
-              <Flag className="w-4 h-4 text-amber-400" />
-              <span>Lihat Selebrasi 3D di Tiang Bendera</span>
+              <Flag className="w-3.5 h-3.5 text-amber-400" />
+              <span>Selebrasi 3D</span>
             </button>
 
             <button
@@ -242,10 +244,22 @@ export const CompletionCeremonyModal: React.FC<CompletionCeremonyModalProps> = (
                 soundEngine.playVictoryFanfare();
                 onOpenAnalysis();
               }}
-              className="flex-1 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs flex items-center justify-center gap-2 shadow-lg shadow-emerald-950/50 transition-colors"
+              className="py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs flex items-center justify-center gap-1.5 shadow transition-colors"
             >
-              <BarChart3 className="w-4 h-4" />
-              <span>Buka Analisis Soal & Kunci Jawaban</span>
+              <BarChart3 className="w-3.5 h-3.5" />
+              <span>Analisis Soal</span>
+            </button>
+
+            <button
+              onClick={() => {
+                soundEngine.playClick();
+                if (onResetAndLeave) onResetAndLeave();
+                else onClose();
+              }}
+              className="py-2.5 px-3 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs flex items-center justify-center gap-1.5 shadow-lg transition-colors"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span>Keluar & Mulai Ulang</span>
             </button>
           </div>
         </div>

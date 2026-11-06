@@ -4213,6 +4213,10 @@ export default function App() {
             setIsAnalysisPreviewOpen(true);
           }
         }}
+        onResetAndLeave={() => {
+          setIsCompletionCeremonyOpen(false);
+          handleResetSavedSession();
+        }}
         players={classPlayers}
         localPlayerId={localPlayerIdRef.current}
         localPlayerName={studentName || 'Siswa MTsN 14'}
