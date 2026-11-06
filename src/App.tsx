@@ -55,9 +55,16 @@ import {
   CheckCircle2,
   MessageSquare,
   Send,
-  X,
   HelpCircle,
+  Building2,
+  Clock,
+  Flag,
+  Shuffle,
+  AlertTriangle,
+  X,
 } from 'lucide-react';
+import { CreateAreaRoomModal, CreateAreaRoomData } from './components/CreateAreaRoomModal';
+import { ConfirmFinishGameModal } from './components/ConfirmFinishGameModal';
 
 interface ActiveRoomSummary {
   pin: string;
@@ -120,10 +127,9 @@ const QUICK_CHAT_PHRASES = [
 ];
 
 function normalizePin(raw: string): string {
-  const cleaned = String(raw || '')
+  return String(raw || '')
     .toUpperCase()
     .replace(/[^A-Z0-9]/g, '');
-  return cleaned || 'MTN14';
 }
 
 function makePlayerIdForWindow(nameOrRole?: string): string {
@@ -246,6 +252,12 @@ function mergePlayersPreservingFreshMovement(
   return merged;
 }
 
+function formatTimerMMSS(totalSec: number): string {
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+}
+
 export default function App() {
   const vp = useDeviceViewport();
   const initialSession = useMemo(() => loadSavedSession(), []);
@@ -258,10 +270,8 @@ export default function App() {
     initialSession?.localRole || 'STUDENT'
   );
 
-  // Student & Room Form Inputs (Pre-filled from real-time saved session if available)
-  const [roomCodeInput, setRoomCodeInput] = useState<string>(
-    initialSession?.activePin || 'MTN14'
-  );
+  // Student & Room Form Inputs (Default kosong agar siswa input manual sesuai token room guru)
+  const [roomCodeInput, setRoomCodeInput] = useState<string>('');
   const [studentName, setStudentName] = useState<string>(initialSession?.studentName || '');
   const [studentClass, setStudentClass] = useState<string>(
     initialSession?.studentClass || 'Kelas 8A'
@@ -373,6 +383,24 @@ export default function App() {
   const [roomStatus, setRoomStatus] = useState<'LOBBY' | 'PLAYING' | 'ROUND_RESULT' | 'FINISHED'>(
     'PLAYING'
   );
+  const [roomDurationMinutes, setRoomDurationMinutes] = useState<number>(0);
+  const [roomGameEndTime, setRoomGameEndTime] = useState<number | null>(null);
+  const [roomAreaZone, setRoomAreaZone] = useState<string>('ALL_CAMPUS');
+  const [roomName, setRoomName] = useState<string>('Kampus MTsN 14 Halim');
+  const [isCreateAreaRoomModalOpen, setIsCreateAreaRoomModalOpen] = useState<boolean>(false);
+  const [isConfirmFinishModalOpen, setIsConfirmFinishModalOpen] = useState<boolean>(false);
+
+  // 1-Second Live Countdown Ticker for Game Duration Timer
+  const [clockMs, setClockMs] = useState<number>(Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setClockMs(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const remainingGameSec = useMemo(() => {
+    if (!roomGameEndTime || roomDurationMinutes <= 0) return null;
+    return Math.max(0, Math.floor((roomGameEndTime - clockMs) / 1000));
+  }, [roomGameEndTime, roomDurationMinutes, clockMs]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState<number>(0);
   const [classPlayers, setClassPlayers] = useState<MapPlayerEntity[]>([]);
   const [sessionAnswers, setSessionAnswers] = useState<PlayerAnswerEvent[]>([]);
@@ -991,6 +1019,19 @@ export default function App() {
         setSessionAnswers((prev) => [...prev, ev]);
       } else if (pkt.type === 'room:status' && pkt.payload?.status) {
         setRoomStatus(pkt.payload.status);
+      } else if (pkt.type === 'room:game_finished') {
+        setRoomStatus('FINISHED');
+        soundEngine.playVictoryFanfare();
+        setActiveTeacherModalIndex(null);
+        setActiveBuildingInterior(null);
+        if (playerMetaRef.current.localRole === 'STUDENT') {
+          setIsCompletionCeremonyOpen(true);
+          latestPosRef.current.x = 1200;
+          latestPosRef.current.y = 480;
+          setTeleportCommand({ x: 1200, y: 480, seq: Date.now() });
+        } else {
+          setIsAnalysisPreviewOpen(true);
+        }
       } else if (pkt.type === 'room:config' && pkt.payload) {
         if (typeof pkt.payload.categoryFilter === 'string') {
           setSelectedCategory(pkt.payload.categoryFilter);
@@ -1062,6 +1103,27 @@ export default function App() {
           if (msg.type === 'room:joined') {
             const room = msg.payload;
             setRoomStatus(room.status);
+            if (typeof room.durationMinutes === 'number') {
+              setRoomDurationMinutes(room.durationMinutes);
+            }
+            if (typeof room.gameEndTime === 'number') {
+              setRoomGameEndTime(room.gameEndTime);
+            }
+            if (typeof room.areaZone === 'string') {
+              setRoomAreaZone(room.areaZone);
+            }
+            if (typeof room.roomName === 'string') {
+              setRoomName(room.roomName);
+            }
+            if (room.status === 'FINISHED' && playerMetaRef.current.localRole === 'STUDENT') {
+              soundEngine.playVictoryFanfare();
+              setIsCompletionCeremonyOpen(true);
+              setActiveTeacherModalIndex(null);
+              setActiveBuildingInterior(null);
+              latestPosRef.current.x = 1200;
+              latestPosRef.current.y = 480;
+              setTeleportCommand({ x: 1200, y: 480, seq: Date.now() });
+            }
             setSelectedCategory(room.categoryFilter || 'Semua Materi');
             if (Array.isArray(room.enabledQuestionIds)) {
               setEnabledQuestionIds(room.enabledQuestionIds);
@@ -1099,6 +1161,18 @@ export default function App() {
             setJoinedRoom(true);
           } else if (msg.type === 'room:state') {
             const room = msg.payload;
+            if (typeof room.durationMinutes === 'number') {
+              setRoomDurationMinutes(room.durationMinutes);
+            }
+            if (typeof room.gameEndTime === 'number') {
+              setRoomGameEndTime(room.gameEndTime);
+            }
+            if (typeof room.areaZone === 'string') {
+              setRoomAreaZone(room.areaZone);
+            }
+            if (typeof room.roomName === 'string') {
+              setRoomName(room.roomName);
+            }
             setRoomStatus((prevStatus) => {
               if (prevStatus !== 'FINISHED' && room.status === 'FINISHED') {
                 soundEngine.playVictoryFanfare();
@@ -1122,6 +1196,19 @@ export default function App() {
             }
             if (Array.isArray(room.versusMatches)) {
               setVersusMatches(room.versusMatches);
+            }
+          } else if (msg.type === 'room:game_finished') {
+            setRoomStatus('FINISHED');
+            soundEngine.playVictoryFanfare();
+            setActiveTeacherModalIndex(null);
+            setActiveBuildingInterior(null);
+            if (playerMetaRef.current.localRole === 'STUDENT') {
+              setIsCompletionCeremonyOpen(true);
+              latestPosRef.current.x = 1200;
+              latestPosRef.current.y = 480;
+              setTeleportCommand({ x: 1200, y: 480, seq: Date.now() });
+            } else {
+              setIsAnalysisPreviewOpen(true);
             }
           } else if (msg.type === 'player:moved') {
             applyIncomingPlayerMoved(msg.payload);
@@ -1326,6 +1413,18 @@ export default function App() {
           setSessionAnswers(data.room.answers || []);
           setRoomStatus(data.room.status || 'PLAYING');
           setSelectedCategory(data.room.categoryFilter || 'Semua Materi');
+          if (typeof data.room.durationMinutes === 'number') {
+            setRoomDurationMinutes(data.room.durationMinutes);
+          }
+          if (typeof data.room.gameEndTime === 'number') {
+            setRoomGameEndTime(data.room.gameEndTime);
+          }
+          if (typeof data.room.areaZone === 'string') {
+            setRoomAreaZone(data.room.areaZone);
+          }
+          if (typeof data.room.roomName === 'string') {
+            setRoomName(data.room.roomName);
+          }
           if (Array.isArray(data.room.chatMessages)) {
             setChatMessages(data.room.chatMessages);
           }
@@ -1388,7 +1487,7 @@ export default function App() {
     const cleanName = studentName.trim();
 
     if (!cleanPin) {
-      setAuthError('Silakan masukkan Kode Room Kelas terlebih dahulu.');
+      setAuthError('Silakan masukkan Token / Kode Room yang dibuat oleh Guru terlebih dahulu.');
       return;
     }
     if (!cleanName) {
@@ -1476,6 +1575,96 @@ export default function App() {
     );
   };
 
+  const handleFinishGameSimultaneously = async () => {
+    setIsConfirmFinishModalOpen(false);
+    try {
+      await fetch('/api/room/finish', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin: activePin, role: 'TEACHER', isTeacher: true }),
+      });
+    } catch {
+      // Fallback
+    }
+
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(
+        JSON.stringify({
+          type: 'room:finish_game',
+          payload: { pin: activePin },
+        })
+      );
+    }
+    cloudBridgeRef.current?.publish('room:game_finished', { pin: activePin });
+    setRoomStatus('FINISHED');
+    soundEngine.playVictoryFanfare();
+    setIsAnalysisPreviewOpen(true);
+  };
+
+  const handleLaunchAreaRoom = async (data: CreateAreaRoomData) => {
+    setIsCreateAreaRoomModalOpen(false);
+    const cleanPin = normalizePin(data.pin);
+    setTeacherRoomCode(cleanPin);
+    setActivePin(cleanPin);
+    setRoomDurationMinutes(data.durationMinutes);
+    setRoomAreaZone(data.areaZone);
+    setRoomName(data.roomName);
+    setQuestionCountLimit(data.questionLimit);
+    setIsTeacherUnlocked(true);
+    setAuthError(null);
+
+    const uniqueId = makePlayerIdForWindow('azhary');
+    localPlayerIdRef.current = uniqueId;
+    const spawn = getInitialSpawnForPlayer(uniqueId);
+    latestPosRef.current.x = spawn.x;
+    latestPosRef.current.y = spawn.y;
+    hasSpawnedInRoomRef.current = true;
+    setTeleportCommand({ x: spawn.x, y: spawn.y, seq: Date.now() });
+
+    setStudentName('Azhary Mardhani, S.Kom');
+    setStudentClass('Guru Informatika');
+    setSelectedPresetId('cj_rizky');
+    setAvatarColor('#f59e0b');
+    setCameraMode('FULL_MAP');
+
+    try {
+      const res = await fetch('/api/room/create_area', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pin: cleanPin,
+          roomName: data.roomName,
+          teacherName: 'Azhary Mardhani, S.Kom',
+          role: 'TEACHER',
+          isTeacher: true,
+          durationMinutes: data.durationMinutes,
+          areaZone: data.areaZone,
+          questionLimit: data.questionLimit,
+          categoryFilter: selectedCategory,
+        }),
+      });
+      if (res.ok) {
+        const resData = await res.json();
+        if (resData?.room?.gameEndTime) {
+          setRoomGameEndTime(resData.room.gameEndTime);
+        }
+      }
+    } catch {
+      // Fallback
+    }
+
+    enterRoomWithPin(
+      cleanPin,
+      'Azhary Mardhani, S.Kom',
+      'Guru Informatika',
+      'TEACHER',
+      'cj_rizky',
+      '#f59e0b',
+      selectedCategory,
+      false
+    );
+  };
+
   const handleResetSavedSession = () => {
     const oldPlayerId = localPlayerIdRef.current;
     try {
@@ -1507,6 +1696,7 @@ export default function App() {
       jumpY: 0,
     };
     setStudentName('');
+    setRoomCodeInput('');
     setLocalScore(0);
     setMissionPoints(100);
     setCollectedItemsCount(0);
@@ -2205,6 +2395,18 @@ export default function App() {
     );
   }, [versusMatches, dismissedMatchIds]);
 
+  // Set of player IDs currently engaged in an active duel
+  const duelingPlayerIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const m of versusMatches) {
+      if (m.status === 'IN_PROGRESS' || m.status === 'PENDING_CONSENT') {
+        if (m.challengerId) ids.add(m.challengerId);
+        if (m.opponentId) ids.add(m.opponentId);
+      }
+    }
+    return ids;
+  }, [versusMatches]);
+
   // Keyboard shortcuts:
   // Tab (Toggle Camera), H (Toggle Collapsible Bottom Dock),
   // F (Interact with Teacher Post), V (Challenge Nearby Student to Mutual-Consent 1v1 Versus)
@@ -2283,6 +2485,7 @@ export default function App() {
         onEnterBuildingInterior={setActiveBuildingInterior}
         onItemPickedUpToast={handleItemPickedUpToast}
         onLocalHudSync={setLocalHud}
+        duelingPlayerIds={duelingPlayerIds}
       />
 
       {/* ====================================================================
@@ -2525,17 +2728,18 @@ export default function App() {
               {entryTab === 'STUDENT' ? (
                 <form onSubmit={handleStudentJoinRoom} className="space-y-3.5">
                   <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5">
-                    <div className="sm:col-span-2">
-                      <label className="block text-xs font-semibold text-amber-400 mb-1">
-                        Kode Room
+                    <div className="sm:col-span-3">
+                      <label className="block text-xs font-semibold text-amber-400 mb-1 flex items-center gap-1">
+                        <KeyRound className="w-3.5 h-3.5" />
+                        <span>Token / Kode Room</span>
                       </label>
                       <input
                         type="text"
                         required
                         value={roomCodeInput}
                         onChange={(e) => setRoomCodeInput(normalizePin(e.target.value))}
-                        placeholder="MTN14"
-                        className="w-full px-2.5 py-2 text-base font-mono font-bold tracking-widest uppercase bg-slate-950 border border-amber-600/80 rounded-xl text-amber-300 focus:outline-none focus:border-amber-400 text-center"
+                        placeholder="Ketik Token Room..."
+                        className="w-full px-2.5 py-2 text-base font-mono font-bold tracking-widest uppercase bg-slate-950 border border-amber-600/80 rounded-xl text-amber-300 focus:outline-none focus:border-amber-400 text-center placeholder:text-slate-600 placeholder:normal-case placeholder:text-xs placeholder:tracking-normal"
                       />
                     </div>
 
@@ -2698,7 +2902,11 @@ export default function App() {
                     className="w-full flex items-center justify-center gap-2 py-3 px-4 sm:px-6 text-xs sm:text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-500 rounded-xl shadow-lg transition-colors"
                   >
                     <Play className="w-4 h-4 fill-current shrink-0" />
-                    <span>Masuk ke Open-World 3D MTsN 14 Halim ({roomCodeInput || 'MTN14'})</span>
+                    <span>
+                      {roomCodeInput
+                        ? `Masuk ke Arena 3D MTsN 14 Halim (Token: ${roomCodeInput})`
+                        : 'Masuk ke Arena 3D MTsN 14 Halim (Wajib Isi Token Room Guru)'}
+                    </span>
                   </button>
                 </form>
               ) : !isTeacherUnlocked ? (
@@ -2789,23 +2997,34 @@ export default function App() {
                       <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
                       <span>Akses Guru Terverifikasi — Azhary Mardhani, S.Kom</span>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsTeacherUnlocked(false);
-                        setTeacherPasswordInput('');
-                        setAuthError(null);
-                      }}
-                      className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-rose-950 text-slate-300 hover:text-rose-300 border border-slate-700 text-[11px] font-bold transition-colors"
-                    >
-                      Kunci Kembali Menu Guru
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setIsCreateAreaRoomModalOpen(true)}
+                        className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-slate-950 font-black text-xs flex items-center gap-1.5 shadow transition-all hover:scale-105 active:scale-95"
+                      >
+                        <Building2 className="w-3.5 h-3.5 text-slate-950 shrink-0" />
+                        <span>➕ Buat Room Area & Token Baru</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsTeacherUnlocked(false);
+                          setTeacherPasswordInput('');
+                          setAuthError(null);
+                        }}
+                        className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-rose-950 text-slate-300 hover:text-rose-300 border border-slate-700 text-[11px] font-bold transition-colors"
+                      >
+                        Kunci Kembali
+                      </button>
+                    </div>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                     <div>
-                      <label className="block text-xs font-semibold text-amber-400 mb-1">
-                        Kode Room Kelas
+                      <label className="block text-xs font-semibold text-amber-400 mb-1 flex items-center gap-1">
+                        <KeyRound className="w-3.5 h-3.5" />
+                        <span>Token / Kode Room</span>
                       </label>
                       <div className="flex gap-1.5">
                         <input
@@ -2818,8 +3037,9 @@ export default function App() {
                         <button
                           type="button"
                           onClick={() =>
-                            setTeacherRoomCode(`14${Math.floor(100 + Math.random() * 900)}`)
+                            setTeacherRoomCode(`HALIM${Math.floor(10 + Math.random() * 90)}`)
                           }
+                          title="Acak Token Room"
                           className="px-2.5 py-2 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl whitespace-nowrap shrink-0"
                         >
                           Acak
@@ -2828,8 +3048,29 @@ export default function App() {
                     </div>
 
                     <div>
+                      <label className="block text-xs font-semibold text-sky-400 mb-1 flex items-center gap-1">
+                        <Clock className="w-3.5 h-3.5" />
+                        <span>Durasi Waktu Permainan</span>
+                      </label>
+                      <select
+                        value={roomDurationMinutes}
+                        onChange={(e) => setRoomDurationMinutes(Number(e.target.value))}
+                        className="w-full px-3 py-2.5 text-xs font-bold bg-slate-950 border border-sky-600/80 rounded-xl text-sky-300"
+                      >
+                        <option value={0}>♾️ Bebas (Tanpa Batas Waktu)</option>
+                        <option value={5}>⏱️ 5 Menit (Kuis Kilat)</option>
+                        <option value={10}>⏱️ 10 Menit</option>
+                        <option value={15}>⏱️ 15 Menit</option>
+                        <option value={20}>⏱️ 20 Menit</option>
+                        <option value={30}>⏱️ 30 Menit (Standar)</option>
+                        <option value={45}>⏱️ 45 Menit</option>
+                        <option value={60}>⏱️ 60 Menit (Ujian Penuh)</option>
+                      </select>
+                    </div>
+
+                    <div>
                       <label className="block text-xs font-semibold text-slate-300 mb-1">
-                        Filter Cepat Bab Materi (Sesuai Bab Aktif)
+                        Filter Cepat Bab Materi
                       </label>
                       <select
                         value={selectedCategory}
@@ -2866,7 +3107,7 @@ export default function App() {
 
                     <div>
                       <label className="block text-xs font-semibold text-emerald-400 mb-1">
-                        Pilih Banyaknya Soal Ujian
+                        Banyaknya Soal Ujian
                       </label>
                       <select
                         value={questionCountLimit}
@@ -3196,6 +3437,19 @@ export default function App() {
                     <HelpCircle className="w-3 h-3" />
                     <span>Petunjuk</span>
                   </button>
+                  {roomDurationMinutes > 0 && remainingGameSec !== null ? (
+                    <div
+                      className={`flex items-center gap-1 px-1.5 py-0.5 rounded-lg text-[10px] font-mono font-black border shrink-0 ${
+                        remainingGameSec <= 180
+                          ? 'bg-rose-950/90 border-rose-500 text-rose-300 animate-pulse'
+                          : 'bg-amber-950/90 border-amber-500/80 text-amber-300'
+                      }`}
+                      title={`Sisa Waktu Ujian: ${formatTimerMMSS(remainingGameSec)}`}
+                    >
+                      <Clock className="w-3 h-3 shrink-0" />
+                      <span>{formatTimerMMSS(remainingGameSec)}</span>
+                    </div>
+                  ) : null}
                 </div>
 
                 {/* Right: Compact Score, MP & Question Counter */}
@@ -3294,6 +3548,32 @@ export default function App() {
                       <Copy className="w-3 h-3" />
                     )}
                   </button>
+                  {roomDurationMinutes > 0 && remainingGameSec !== null ? (
+                    <div
+                      className={`flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-mono font-black border ${
+                        remainingGameSec <= 180
+                          ? 'bg-rose-950 border-rose-500 text-rose-300 animate-pulse'
+                          : 'bg-amber-950/90 border-amber-500/80 text-amber-300'
+                      }`}
+                      title="Sisa Waktu Permainan / Ujian"
+                    >
+                      <Clock className="w-3.5 h-3.5" />
+                      <span>{formatTimerMMSS(remainingGameSec)}</span>
+                    </div>
+                  ) : (
+                    <div
+                      className="flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-mono text-emerald-300 bg-emerald-950/80 border border-emerald-700/60"
+                      title="Waktu Permainan Bebas"
+                    >
+                      <Clock className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Bebas</span>
+                    </div>
+                  )}
+                  {roomAreaZone && roomAreaZone !== 'ALL_CAMPUS' && (
+                    <div className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-sky-950 border border-sky-600 text-sky-300">
+                      📍 {roomAreaZone.replace('_', ' ')}
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex items-center gap-1.5">
@@ -3708,13 +3988,33 @@ export default function App() {
                   </button>
 
                   {localRole === 'TEACHER' && (
-                    <button
-                      onClick={() => setIsMaterialModalOpen(true)}
-                      className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 sm:py-2 text-[11px] sm:text-xs font-bold text-slate-950 bg-amber-400 hover:bg-amber-300 border border-amber-300 rounded-lg sm:rounded-xl transition-colors whitespace-nowrap shrink-0 shadow"
-                    >
-                      <BookOpen className="w-3.5 h-3.5 text-slate-950" />
-                      <span>Pilih Materi & Soal ({activeQuestions.length})</span>
-                    </button>
+                    <>
+                      <button
+                        onClick={() => setIsCreateAreaRoomModalOpen(true)}
+                        className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 sm:py-2 text-[11px] sm:text-xs font-bold text-slate-950 bg-gradient-to-r from-amber-400 to-yellow-400 hover:from-amber-300 hover:to-yellow-300 border border-amber-300 rounded-lg sm:rounded-xl transition-all whitespace-nowrap shrink-0 shadow hover:scale-105 active:scale-95"
+                        title="Buat Room Area & Token Ujian Baru"
+                      >
+                        <Building2 className="w-3.5 h-3.5 text-slate-950" />
+                        <span>➕ Buat Room Area</span>
+                      </button>
+
+                      <button
+                        onClick={() => setIsMaterialModalOpen(true)}
+                        className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 sm:py-2 text-[11px] sm:text-xs font-bold text-slate-950 bg-amber-400 hover:bg-amber-300 border border-amber-300 rounded-lg sm:rounded-xl transition-colors whitespace-nowrap shrink-0 shadow"
+                      >
+                        <BookOpen className="w-3.5 h-3.5 text-slate-950" />
+                        <span>Pilih Materi & Soal ({activeQuestions.length})</span>
+                      </button>
+
+                      <button
+                        onClick={() => setIsConfirmFinishModalOpen(true)}
+                        className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 sm:py-2 text-[11px] sm:text-xs font-black text-white bg-rose-600 hover:bg-rose-500 border border-rose-400 rounded-lg sm:rounded-xl transition-all whitespace-nowrap shrink-0 shadow-lg hover:scale-105 active:scale-95"
+                        title="Selesaikan Permainan Secara Serentak untuk Seluruh Siswa"
+                      >
+                        <Flag className="w-3.5 h-3.5 text-white" />
+                        <span>🏁 Selesaikan Serentak</span>
+                      </button>
+                    </>
                   )}
 
                   <button
@@ -3804,6 +4104,9 @@ export default function App() {
             handleFinishToAnalysis();
           }
         }}
+        onFinishGameSimultaneously={() => setIsConfirmFinishModalOpen(true)}
+        onOpenCreateAreaRoom={() => setIsCreateAreaRoomModalOpen(true)}
+        roomPin={activePin}
       />
 
       {/* ====================================================================
@@ -3925,6 +4228,33 @@ export default function App() {
       <GameGuideModal
         isOpen={isGuideModalOpen}
         onClose={() => setIsGuideModalOpen(false)}
+      />
+
+      {/* ====================================================================
+          10. MODAL BUAT ROOM AREA & TOKEN UJIAN (KHUSUS GURU)
+         ==================================================================== */}
+      <CreateAreaRoomModal
+        isOpen={isCreateAreaRoomModalOpen}
+        onClose={() => setIsCreateAreaRoomModalOpen(false)}
+        onLaunchRoom={handleLaunchAreaRoom}
+        currentRoomPin={activePin}
+        totalAvailableQuestions={questions.length}
+        questions={questions}
+        enabledQuestionIds={enabledQuestionIds}
+        onUpdateEnabledQuestions={handleUpdateEnabledQuestions}
+      />
+
+      {/* ====================================================================
+          11. MODAL KONFIRMASI SELESAIKAN PERMAINAN SERENTAK (KHUSUS GURU)
+         ==================================================================== */}
+      <ConfirmFinishGameModal
+        isOpen={isConfirmFinishModalOpen}
+        onClose={() => setIsConfirmFinishModalOpen(false)}
+        onConfirmFinish={handleFinishGameSimultaneously}
+        roomPin={activePin}
+        totalStudents={onlineClassmates.length}
+        roomName={roomName}
+        remainingGameSec={remainingGameSec}
       />
     </div>
   );

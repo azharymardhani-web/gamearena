@@ -9,6 +9,7 @@ import {
   PlayerAnswerEvent,
 } from '../data/informaticsData';
 import { soundEngine } from '../utils/soundEngine';
+import { ClashingSwordsAnimation } from './ClashingSwordsAnimation';
 import {
   Swords,
   GraduationCap,
@@ -151,6 +152,7 @@ export const VersusDuelModal: React.FC<VersusDuelModalProps> = ({
     const isCorrect = idx === currentChallenge.correctIndex;
     const myGain = isCorrect ? 100 + timeLeft * 10 : 0;
 
+    soundEngine.playSwordClash();
     if (isCorrect) {
       soundEngine.playCorrectAnswer();
       setLastFeedback({
@@ -204,8 +206,12 @@ export const VersusDuelModal: React.FC<VersusDuelModalProps> = ({
           {/* STATE 1: PENDING MUTUAL CONSENT */}
           {activeMatch.status === 'PENDING_CONSENT' && (
             <div className="p-6 sm:p-8 text-center space-y-4 bg-white m-4 rounded-xl border border-slate-200 shadow-xs">
-              <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-rose-100 border border-rose-200 text-rose-600">
-                <Swords className="w-7 h-7" />
+              <div className="flex flex-col items-center justify-center py-1">
+                <ClashingSwordsAnimation
+                  size="md"
+                  roundText="PERSIAPAN TANTANGAN DUEL 1V1"
+                  interactiveSound={false}
+                />
               </div>
               {isChallenger ? (
                 <>
@@ -300,12 +306,18 @@ export const VersusDuelModal: React.FC<VersusDuelModalProps> = ({
                   )}
                 </div>
 
-                <div className="flex flex-col items-center justify-center">
-                  <span className="px-3 py-1 rounded-md bg-slate-900 text-amber-400 text-xs font-mono font-extrabold">
-                    {activeMatch.status === 'FINISHED'
-                      ? 'HASIL AKHIR'
-                      : `SOAL ${roundIdx + 1}/3 · ${timeLeft} DETIK`}
-                  </span>
+                <div className="flex flex-col items-center justify-center py-1 px-2">
+                  <ClashingSwordsAnimation
+                    size="sm"
+                    roundText={
+                      activeMatch.status === 'FINISHED'
+                        ? 'HASIL AKHIR'
+                        : `RONDE ${roundIdx + 1}/3`
+                    }
+                    timeLeft={activeMatch.status === 'FINISHED' ? undefined : timeLeft}
+                    triggerClashHit={hasAnsweredThisRound || oppHasAnsweredThisRound}
+                    interactiveSound={activeMatch.status === 'IN_PROGRESS'}
+                  />
                 </div>
 
                 <div className="text-right min-w-0">
@@ -459,6 +471,9 @@ interface TeacherQuestModalProps {
     missionPointCost: number
   ) => void;
   onOpenFullAnalysis: () => void;
+  onFinishGameSimultaneously?: () => void;
+  onOpenCreateAreaRoom?: () => void;
+  roomPin?: string;
 }
 
 export const STATION_ROBLOX_ZONES: {
@@ -513,6 +528,9 @@ export const TeacherQuestModal: React.FC<TeacherQuestModalProps> = ({
   onClose,
   onSubmitTeacherAnswer,
   onOpenFullAnalysis,
+  onFinishGameSimultaneously,
+  onOpenCreateAreaRoom,
+  roomPin,
 }) => {
   const defaultGradeFromClass = useMemo<'ALL' | 'Kelas 7' | 'Kelas 8'>(() => {
     if (localPlayerClass.startsWith('Kelas 7')) return 'Kelas 7';
@@ -948,6 +966,33 @@ export const TeacherQuestModal: React.FC<TeacherQuestModalProps> = ({
                         <option value={0}>Semua Soal</option>
                       </select>
                     </div>
+
+                    {onOpenCreateAreaRoom && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          soundEngine.playClick();
+                          onOpenCreateAreaRoom();
+                        }}
+                        className="px-3 py-1 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs flex items-center gap-1 shadow-xs transition-colors"
+                      >
+                        <span>➕ Buat Room Area</span>
+                      </button>
+                    )}
+
+                    {onFinishGameSimultaneously && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          soundEngine.playClick();
+                          onFinishGameSimultaneously();
+                        }}
+                        className="px-3 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-black text-xs flex items-center gap-1 shadow-xs transition-colors"
+                      >
+                        <Flag className="w-3.5 h-3.5 fill-current" />
+                        <span>Selesaikan Serentak</span>
+                      </button>
+                    )}
                   </>
                 )}
               </div>

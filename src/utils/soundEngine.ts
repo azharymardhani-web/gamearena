@@ -162,6 +162,40 @@ class SoundEngine {
       osc.stop(now + 0.45);
     });
   }
+
+  public playSwordClash() {
+    const ctx = this.ensureContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+
+    // High resonant metallic steel blades ring (sine pair)
+    [2400, 3150].forEach((freq) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, now);
+      osc.frequency.exponentialRampToValueAtTime(freq * 0.88, now + 0.3);
+      gain.gain.setValueAtTime(0.12, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.32);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.32);
+    });
+
+    // Sharp metallic impact transient (triangle with fast downward pitch)
+    const impactOsc = ctx.createOscillator();
+    const impactGain = ctx.createGain();
+    impactOsc.type = 'triangle';
+    impactOsc.frequency.setValueAtTime(950, now);
+    impactOsc.frequency.exponentialRampToValueAtTime(140, now + 0.06);
+    impactGain.gain.setValueAtTime(0.2, now);
+    impactGain.gain.exponentialRampToValueAtTime(0.001, now + 0.07);
+    impactOsc.connect(impactGain);
+    impactGain.connect(ctx.destination);
+    impactOsc.start(now);
+    impactOsc.stop(now + 0.07);
+  }
 }
 
 export const soundEngine = new SoundEngine();

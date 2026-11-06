@@ -14,6 +14,7 @@ export interface ArenaSyncPacket {
     | 'versus:update'
     | 'teacher:answer'
     | 'room:status'
+    | 'room:game_finished'
     | 'room:config';
   payload: any;
 }

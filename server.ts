@@ -163,6 +163,83 @@ let arenaCategoryFilter = 'Semua Materi';
 let enabledQuestionIdsStore: string[] = [];
 let arenaQuestionLimit = 0; // 0 = Semua Soal Aktif, >0 = Batas Jumlah Soal Ujian (misal 5, 10, 15, 20, 25, 30, 40, 50)
 
+export interface AreaRoomState {
+  pin: string;
+  roomName: string;
+  areaZone: string;
+  teacherName: string;
+  hostId: string;
+  status: 'LOBBY' | 'PLAYING' | 'ROUND_RESULT' | 'FINISHED';
+  categoryFilter: string;
+  enabledQuestionIds: string[];
+  questionLimit: number;
+  durationMinutes: number; // 0 = Bebas / tanpa batas waktu
+  gameStartTime: number | null;
+  gameEndTime: number | null;
+  createdAt: number;
+}
+
+const roomsMap = new Map<string, AreaRoomState>();
+
+export function getOrCreateRoom(
+  rawPin?: unknown,
+  defaults?: Partial<AreaRoomState>
+): AreaRoomState {
+  const pin = normalizeRoomPin(rawPin || arenaPin);
+  let room = roomsMap.get(pin);
+  if (!room) {
+    const duration = defaults?.durationMinutes ?? 0;
+    const now = Date.now();
+    room = {
+      pin,
+      roomName:
+        defaults?.roomName ||
+        (pin === 'MTN14' ? 'Kampus MTsN 14 Halim Jakarta Timur' : `Room Area ${pin}`),
+      areaZone: defaults?.areaZone || 'ALL_CAMPUS',
+      teacherName: defaults?.teacherName || arenaTeacherName,
+      hostId: defaults?.hostId || 'teacher-default',
+      status: defaults?.status || 'PLAYING',
+      categoryFilter: defaults?.categoryFilter || arenaCategoryFilter || 'Semua Materi',
+      enabledQuestionIds: Array.isArray(defaults?.enabledQuestionIds)
+        ? defaults.enabledQuestionIds
+        : [...enabledQuestionIdsStore],
+      questionLimit:
+        typeof defaults?.questionLimit === 'number'
+          ? defaults.questionLimit
+          : arenaQuestionLimit,
+      durationMinutes: duration,
+      gameStartTime: duration > 0 ? now : null,
+      gameEndTime: duration > 0 ? now + duration * 60 * 1000 : null,
+      createdAt: now,
+    };
+    roomsMap.set(pin, room);
+  } else if (defaults) {
+    if (defaults.roomName) room.roomName = defaults.roomName;
+    if (defaults.areaZone) room.areaZone = defaults.areaZone;
+    if (defaults.categoryFilter) room.categoryFilter = defaults.categoryFilter;
+    if (Array.isArray(defaults.enabledQuestionIds)) room.enabledQuestionIds = defaults.enabledQuestionIds;
+    if (typeof defaults.questionLimit === 'number') room.questionLimit = defaults.questionLimit;
+    if (typeof defaults.durationMinutes === 'number') {
+      room.durationMinutes = Math.max(0, defaults.durationMinutes);
+      const now = Date.now();
+      if (room.durationMinutes > 0) {
+        room.gameStartTime = now;
+        room.gameEndTime = now + room.durationMinutes * 60 * 1000;
+      } else {
+        room.gameStartTime = null;
+        room.gameEndTime = null;
+      }
+    }
+    if (defaults.status) room.status = defaults.status;
+  }
+  return room;
+}
+
+getOrCreateRoom('MTN14', {
+  roomName: 'Kampus MTsN 14 Halim Jakarta Timur',
+  areaZone: 'ALL_CAMPUS',
+});
+
 function pickVersusQuestions(challengerClass?: string): VersusQuestionItem[] {
   let pool = questionsStore;
   if (enabledQuestionIdsStore.length > 0) {
@@ -207,10 +284,9 @@ let arenaChatMessages: RoomChatMessage[] = [
 const arenaVersusMatches = new Map<string, VersusMatchState>();
 
 export function normalizeRoomPin(raw: unknown): string {
-  const cleaned = String(raw || '')
+  return String(raw || '')
     .toUpperCase()
     .replace(/[^A-Z0-9]/g, '');
-  return cleaned || 'MTN14';
 }
 
 const ROAMING_PEERS_TEMPLATE: Array<{
@@ -293,6 +369,7 @@ function schedulePersistStateToDisk() {
         materials: materialsStore,
         questions: questionsStore,
         globalAnswerHistory: globalAnswerHistory.slice(-500),
+        rooms: Array.from(roomsMap.values()),
         arena: {
           pin: arenaPin,
           roomName: arenaRoomName,
@@ -325,6 +402,13 @@ function loadPersistedStateFromDisk() {
     }
     if (Array.isArray(parsed.globalAnswerHistory)) {
       globalAnswerHistory = parsed.globalAnswerHistory;
+    }
+    if (Array.isArray(parsed.rooms)) {
+      for (const r of parsed.rooms) {
+        if (r && r.pin) {
+          roomsMap.set(normalizeRoomPin(r.pin), r);
+        }
+      }
     }
     if (parsed.arena) {
       arenaPin = parsed.arena.pin || 'MTN14';
@@ -410,9 +494,25 @@ function getActiveVersusMatches(): VersusMatchState[] {
 
 function serializeArena(requestedPin?: string) {
   const pin = normalizeRoomPin(requestedPin || arenaPin);
-  const qs = getFilteredQuestions(arenaCategoryFilter);
+  const room = getOrCreateRoom(pin);
+  const qs = getFilteredQuestions(room.categoryFilter);
   const now = Date.now();
   seedBotsInArena();
+
+  // Automatic Game Completion when duration timer hits 0
+  if (
+    room.status === 'PLAYING' &&
+    room.durationMinutes > 0 &&
+    room.gameEndTime &&
+    now >= room.gameEndTime
+  ) {
+    room.status = 'FINISHED';
+  }
+
+  const timeLeftSec =
+    room.durationMinutes > 0 && room.gameEndTime
+      ? Math.max(0, Math.floor((room.gameEndTime - now) / 1000))
+      : 0;
 
   // Strict Room Code Isolation: Only players using the SAME room PIN created by the teacher see each other!
   const activePlayers: ClassMapPlayer[] = [];
@@ -438,17 +538,21 @@ function serializeArena(requestedPin?: string) {
   );
 
   return {
-    pin,
-    roomName: `Kampus MTsN 14 Halim (${pin})`,
-    teacherName: arenaTeacherName,
-    hostId: 'teacher-default',
-    status: arenaStatus,
-    categoryFilter: arenaCategoryFilter,
-    enabledQuestionIds: enabledQuestionIdsStore,
-    questionLimit: arenaQuestionLimit,
+    pin: room.pin,
+    roomName: room.roomName,
+    areaZone: room.areaZone || 'ALL_CAMPUS',
+    teacherName: room.teacherName,
+    hostId: room.hostId,
+    status: room.status,
+    categoryFilter: room.categoryFilter,
+    enabledQuestionIds: room.enabledQuestionIds,
+    questionLimit: room.questionLimit,
+    durationMinutes: room.durationMinutes,
+    gameStartTime: room.gameStartTime,
+    gameEndTime: room.gameEndTime,
+    timeLeftSec,
     currentQuestionIndex: 0,
     totalQuestions: qs.length,
-    timeLeftSec: 60,
     players: activePlayers,
     answers: roomAnswers.slice(-200),
     chatMessages: roomChats.slice(-50),
@@ -900,24 +1004,163 @@ async function startServer() {
   });
 
   app.post('/api/room/config', (req, res) => {
-    const { categoryFilter, enabledQuestionIds, questionLimit } = req.body || {};
+    const {
+      pin: rawPin,
+      categoryFilter,
+      enabledQuestionIds,
+      questionLimit,
+      durationMinutes,
+      roomName,
+      areaZone,
+    } = req.body || {};
+    const targetPin = normalizeRoomPin(rawPin || arenaPin);
+    const room = getOrCreateRoom(targetPin);
+
     if (typeof categoryFilter === 'string') {
+      room.categoryFilter = categoryFilter;
       arenaCategoryFilter = categoryFilter;
     }
     if (Array.isArray(enabledQuestionIds)) {
-      enabledQuestionIdsStore = enabledQuestionIds.map(String);
+      room.enabledQuestionIds = enabledQuestionIds.map(String);
+      enabledQuestionIdsStore = room.enabledQuestionIds;
     }
     if (typeof questionLimit === 'number' && questionLimit >= 0) {
+      room.questionLimit = questionLimit;
       arenaQuestionLimit = questionLimit;
     }
+    if (typeof durationMinutes === 'number') {
+      room.durationMinutes = Math.max(0, durationMinutes);
+      const now = Date.now();
+      if (room.durationMinutes > 0) {
+        room.gameStartTime = now;
+        room.gameEndTime = now + room.durationMinutes * 60 * 1000;
+      } else {
+        room.gameStartTime = null;
+        room.gameEndTime = null;
+      }
+    }
+    if (typeof roomName === 'string' && roomName.trim()) {
+      room.roomName = roomName.trim();
+    }
+    if (typeof areaZone === 'string' && areaZone.trim()) {
+      room.areaZone = areaZone.trim();
+    }
+
     schedulePersistStateToDisk();
-    const serialized = serializeArena(arenaPin);
-    broadcastToArena({ type: 'room:state', payload: serialized });
+    const serialized = serializeArena(targetPin);
+    broadcastToArena({ type: 'room:state', payload: serialized }, targetPin);
     res.json({
       ok: true,
       room: serialized,
-      enabledQuestionIds: enabledQuestionIdsStore,
-      questionLimit: arenaQuestionLimit,
+      enabledQuestionIds: room.enabledQuestionIds,
+      questionLimit: room.questionLimit,
+      durationMinutes: room.durationMinutes,
+    });
+  });
+
+  // Teacher-Only Endpoint: Finish/End Game Simultaneously for all students in that room
+  app.post('/api/room/finish', (req, res) => {
+    const { role, isTeacher, pin: rawPin } = req.body || {};
+    if (role === 'STUDENT') {
+      res.status(403).json({
+        error: 'Akses ditolak! Hanya Guru yang berhak menyelesaikan permainan secara serentak.',
+      });
+      return;
+    }
+
+    const targetPin = normalizeRoomPin(rawPin || arenaPin);
+    const room = getOrCreateRoom(targetPin);
+    room.status = 'FINISHED';
+
+    schedulePersistStateToDisk();
+    const serialized = serializeArena(targetPin);
+
+    // Broadcast both room:game_finished and room:state to that room
+    broadcastToArena(
+      {
+        type: 'room:game_finished',
+        payload: {
+          pin: targetPin,
+          message: 'Guru telah menyelesaikan permainan secara serentak.',
+          room: serialized,
+        },
+      },
+      targetPin
+    );
+    broadcastToArena({ type: 'room:state', payload: serialized }, targetPin);
+
+    res.json({
+      ok: true,
+      message: `Permainan di Room ${targetPin} berhasil diselesaikan secara serentak.`,
+      room: serialized,
+    });
+  });
+
+  // Teacher-Only Endpoint: Create a Dedicated Area Room with Token, Area Zone & Timer Duration
+  app.post('/api/room/create_area', (req, res) => {
+    const {
+      pin: rawPin,
+      roomName,
+      areaZone,
+      teacherName,
+      durationMinutes,
+      questionLimit,
+      categoryFilter,
+      enabledQuestionIds,
+      role,
+      isTeacher,
+    } = req.body || {};
+
+    if (role === 'STUDENT') {
+      res.status(403).json({ error: 'Hanya Guru yang dapat membuat Room Area.' });
+      return;
+    }
+
+    const targetPin = normalizeRoomPin(
+      rawPin || `14${Math.floor(100 + Math.random() * 900)}`
+    );
+    const duration =
+      typeof durationMinutes === 'number' && durationMinutes > 0 ? durationMinutes : 0;
+    const now = Date.now();
+
+    const room: AreaRoomState = {
+      pin: targetPin,
+      roomName: String(roomName || `Area Room ${targetPin} MTsN 14 Halim`).trim(),
+      areaZone: String(areaZone || 'ALL_CAMPUS'),
+      teacherName: String(teacherName || arenaTeacherName),
+      hostId: 'teacher-azhary',
+      status: 'PLAYING',
+      categoryFilter: String(categoryFilter || arenaCategoryFilter),
+      enabledQuestionIds: Array.isArray(enabledQuestionIds)
+        ? enabledQuestionIds.map(String)
+        : [...enabledQuestionIdsStore],
+      questionLimit:
+        typeof questionLimit === 'number' && questionLimit >= 0
+          ? questionLimit
+          : arenaQuestionLimit,
+      durationMinutes: duration,
+      gameStartTime: duration > 0 ? now : null,
+      gameEndTime: duration > 0 ? now + duration * 60 * 1000 : null,
+      createdAt: now,
+    };
+
+    roomsMap.set(targetPin, room);
+    arenaPin = targetPin;
+
+    schedulePersistStateToDisk();
+    const serialized = serializeArena(targetPin);
+
+    broadcastToArena(
+      { type: 'room:created', payload: { pin: targetPin, room: serialized } },
+      targetPin
+    );
+    broadcastToArena({ type: 'room:state', payload: serialized }, targetPin);
+
+    res.json({
+      ok: true,
+      message: `Room Area ${targetPin} berhasil dibuat dan diluncurkan.`,
+      pin: targetPin,
+      room: serialized,
     });
   });
 
@@ -1362,6 +1605,33 @@ async function startServer() {
     }
   }, 250);
 
+  // Room Countdown Timer Ticker: automatically mark game as FINISHED when time expires
+  setInterval(() => {
+    const now = Date.now();
+    for (const [pin, room] of roomsMap.entries()) {
+      if (room.status === 'PLAYING' && room.durationMinutes > 0 && room.gameEndTime) {
+        if (now >= room.gameEndTime) {
+          room.status = 'FINISHED';
+          schedulePersistStateToDisk();
+          const serialized = serializeArena(pin);
+          broadcastToArena(
+            {
+              type: 'room:game_finished',
+              payload: {
+                pin,
+                message:
+                  'Waktu ujian/permainan telah habis! Permainan diselesaikan secara serentak.',
+                room: serialized,
+              },
+            },
+            pin
+          );
+          broadcastToArena({ type: 'room:state', payload: serialized }, pin);
+        }
+      }
+    }
+  }, 1000);
+
   wss.on('connection', (ws) => {
     ws.on('message', (raw) => {
       try {
@@ -1569,16 +1839,69 @@ async function startServer() {
             broadcastToArena({ type: 'room:state', payload: serializeArena(arenaPin) });
           }
         } else if (type === 'room:finish_game') {
-          arenaStatus = 'FINISHED';
+          const targetPin = normalizeRoomPin(payload?.pin || clientPlayerMap.get(ws)?.pin || arenaPin);
+          const room = getOrCreateRoom(targetPin);
+          room.status = 'FINISHED';
           schedulePersistStateToDisk();
-          broadcastToArena({ type: 'room:state', payload: serializeArena(arenaPin) });
+          const serialized = serializeArena(targetPin);
+          broadcastToArena(
+            {
+              type: 'room:game_finished',
+              payload: {
+                pin: targetPin,
+                message: 'Guru telah menyelesaikan permainan secara serentak.',
+                room: serialized,
+              },
+            },
+            targetPin
+          );
+          broadcastToArena({ type: 'room:state', payload: serialized }, targetPin);
+        } else if (type === 'room:create_area') {
+          const targetPin = normalizeRoomPin(
+            payload?.pin || `14${Math.floor(100 + Math.random() * 900)}`
+          );
+          const duration =
+            typeof payload?.durationMinutes === 'number' && payload.durationMinutes > 0
+              ? payload.durationMinutes
+              : 0;
+          const now = Date.now();
+          const room: AreaRoomState = {
+            pin: targetPin,
+            roomName: String(payload?.roomName || `Area Room ${targetPin} MTsN 14 Halim`).trim(),
+            areaZone: String(payload?.areaZone || 'ALL_CAMPUS'),
+            teacherName: String(payload?.teacherName || arenaTeacherName),
+            hostId: 'teacher-azhary',
+            status: 'PLAYING',
+            categoryFilter: String(payload?.categoryFilter || arenaCategoryFilter),
+            enabledQuestionIds: Array.isArray(payload?.enabledQuestionIds)
+              ? payload.enabledQuestionIds.map(String)
+              : [...enabledQuestionIdsStore],
+            questionLimit:
+              typeof payload?.questionLimit === 'number' ? payload.questionLimit : arenaQuestionLimit,
+            durationMinutes: duration,
+            gameStartTime: duration > 0 ? now : null,
+            gameEndTime: duration > 0 ? now + duration * 60 * 1000 : null,
+            createdAt: now,
+          };
+          roomsMap.set(targetPin, room);
+          arenaPin = targetPin;
+          schedulePersistStateToDisk();
+          const serialized = serializeArena(targetPin);
+          broadcastToArena(
+            { type: 'room:created', payload: { pin: targetPin, room: serialized } },
+            targetPin
+          );
+          broadcastToArena({ type: 'room:state', payload: serialized }, targetPin);
         } else if (type === 'room:start_game') {
+          const targetPin = normalizeRoomPin(payload?.pin || clientPlayerMap.get(ws)?.pin || arenaPin);
+          const room = getOrCreateRoom(targetPin);
           if (payload?.categoryFilter) {
-            arenaCategoryFilter = payload.categoryFilter;
+            room.categoryFilter = payload.categoryFilter;
           }
-          arenaStatus = 'PLAYING';
+          room.status = 'PLAYING';
           schedulePersistStateToDisk();
-          broadcastToArena({ type: 'room:state', payload: serializeArena(arenaPin) });
+          const serialized = serializeArena(targetPin);
+          broadcastToArena({ type: 'room:state', payload: serialized }, targetPin);
         } else if (type === 'room:reset_activities') {
           if (payload?.role === 'TEACHER' || payload?.isTeacher) {
             const targetPin = normalizeRoomPin(payload?.pin || arenaPin);

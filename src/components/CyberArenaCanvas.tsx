@@ -247,6 +247,7 @@ interface CyberArenaCanvasProps {
   onEnterBuildingInterior?: (post: TeacherPostLocation) => void;
   onItemPickedUpToast: (itemName: string, mpGain: number) => void;
   onLocalHudSync: (state: { x: number; y: number; hp: number }) => void;
+  duelingPlayerIds?: Set<string>;
 }
 
 // Create Procedural MTs Negeri 14 Jakarta Timur (Kampus Halim Perdanakusuma) Ground & Green Sports Court Texture
@@ -661,7 +662,8 @@ function drawOverheadTag(
   accentColor: string,
   isTeacher = false,
   chatBubbleText = '',
-  isCrownRank1 = false
+  isCrownRank1 = false,
+  isDueling = false
 ) {
   const ctx = canvas.getContext('2d')!;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -695,28 +697,35 @@ function drawOverheadTag(
   // 2. Overhead Nameplate Badge (Bottom half of canvas: y = 108..212)
   const tagY = 108;
   const tagH = 104;
-  ctx.fillStyle = isCrownRank1
+  ctx.fillStyle = isDueling
+    ? 'rgba(76, 5, 25, 0.95)'
+    : isCrownRank1
     ? 'rgba(69, 26, 3, 0.95)'
     : isTeacher
     ? 'rgba(24, 24, 27, 0.95)'
     : 'rgba(15, 23, 42, 0.92)';
-  ctx.strokeStyle = isCrownRank1 ? '#f59e0b' : accentColor;
-  ctx.lineWidth = isCrownRank1 ? 8 : 6;
+  ctx.strokeStyle = isDueling ? '#f43f5e' : isCrownRank1 ? '#f59e0b' : accentColor;
+  ctx.lineWidth = isDueling ? 8 : isCrownRank1 ? 8 : 6;
   ctx.beginPath();
   ctx.roundRect(10, tagY, canvas.width - 20, tagH, 24);
   ctx.fill();
   ctx.stroke();
 
-  ctx.fillStyle = isCrownRank1 ? '#fef08a' : '#ffffff';
+  ctx.fillStyle = isDueling ? '#ffe4e6' : isCrownRank1 ? '#fef08a' : '#ffffff';
   ctx.font = '800 29px "Outfit", sans-serif';
   ctx.textAlign = 'center';
-  const displayTitle = isCrownRank1 ? `👑 ${title}` : title;
+  const displayTitle = isDueling
+    ? `⚔️ ${title} ⚔️`
+    : isCrownRank1
+    ? `👑 ${title}`
+    : title;
   const cleanTitle = displayTitle.length > 22 ? displayTitle.slice(0, 20) + '..' : displayTitle;
   ctx.fillText(cleanTitle, canvas.width / 2, tagY + 46);
 
-  ctx.fillStyle = isCrownRank1 ? '#facc15' : accentColor;
+  ctx.fillStyle = isDueling ? '#fda4af' : isCrownRank1 ? '#facc15' : accentColor;
   ctx.font = '700 21px "JetBrains Mono", monospace';
-  ctx.fillText(subtitle, canvas.width / 2, tagY + 82);
+  const displaySub = isDueling ? '⚔️ SEDANG DUEL CBT 1V1 ⚔️' : subtitle;
+  ctx.fillText(displaySub, canvas.width / 2, tagY + 82);
 }
 
 export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
@@ -742,6 +751,7 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
   onEnterBuildingInterior,
   onItemPickedUpToast,
   onLocalHudSync,
+  duelingPlayerIds,
 }) => {
   const vp = useDeviceViewport();
   const mountRef = useRef<HTMLDivElement | null>(null);
@@ -775,6 +785,7 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
     onEnterBuildingInterior,
     onItemPickedUpToast,
     onLocalHudSync,
+    duelingPlayerIds,
   });
 
   useEffect(() => {
@@ -801,6 +812,7 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
       onEnterBuildingInterior,
       onItemPickedUpToast,
       onLocalHudSync,
+      duelingPlayerIds,
     };
   }, [
     joinedRoom,
@@ -825,6 +837,7 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
     onEnterBuildingInterior,
     onItemPickedUpToast,
     onLocalHudSync,
+    duelingPlayerIds,
   ]);
 
   useEffect(() => {
@@ -1218,6 +1231,75 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
       }
       crownGroup.visible = false;
       root.add(crownGroup);
+
+      // 3D Clashing Swords Model for Active Dueling Players
+      const swordsGroup = new THREE.Group();
+      swordsGroup.name = 'swordsGroup';
+      swordsGroup.position.set(0, 5.0, 0);
+
+      // Sword 1 (Cyan Cyber Blade)
+      const sword1 = new THREE.Group();
+      const blade1 = new THREE.Mesh(
+        new THREE.BoxGeometry(0.08, 1.25, 0.04),
+        new THREE.MeshStandardMaterial({
+          color: 0x38bdf8,
+          emissive: 0x0284c7,
+          emissiveIntensity: 0.8,
+          metalness: 0.8,
+          roughness: 0.2,
+        })
+      );
+      const guard1 = new THREE.Mesh(
+        new THREE.BoxGeometry(0.35, 0.06, 0.08),
+        new THREE.MeshStandardMaterial({ color: 0xfacc15, metalness: 0.9 })
+      );
+      guard1.position.y = -0.4;
+      const hilt1 = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.04, 0.04, 0.35, 8),
+        new THREE.MeshStandardMaterial({ color: 0x1e293b })
+      );
+      hilt1.position.y = -0.58;
+      sword1.add(blade1, guard1, hilt1);
+      sword1.rotation.z = Math.PI / 4.2;
+      sword1.position.x = -0.15;
+
+      // Sword 2 (Crimson Energy Blade)
+      const sword2 = new THREE.Group();
+      const blade2 = new THREE.Mesh(
+        new THREE.BoxGeometry(0.08, 1.25, 0.04),
+        new THREE.MeshStandardMaterial({
+          color: 0xf43f5e,
+          emissive: 0xe11d48,
+          emissiveIntensity: 0.8,
+          metalness: 0.8,
+          roughness: 0.2,
+        })
+      );
+      const guard2 = new THREE.Mesh(
+        new THREE.BoxGeometry(0.35, 0.06, 0.08),
+        new THREE.MeshStandardMaterial({ color: 0xfacc15, metalness: 0.9 })
+      );
+      guard2.position.y = -0.4;
+      const hilt2 = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.04, 0.04, 0.35, 8),
+        new THREE.MeshStandardMaterial({ color: 0x1e293b })
+      );
+      hilt2.position.y = -0.58;
+      sword2.add(blade2, guard2, hilt2);
+      sword2.rotation.z = -Math.PI / 4.2;
+      sword2.position.x = 0.15;
+
+      // Central clash spark sphere
+      const clashSpark = new THREE.Mesh(
+        new THREE.SphereGeometry(0.16, 8, 8),
+        new THREE.MeshBasicMaterial({ color: 0xfef08a })
+      );
+      clashSpark.name = 'clashSpark';
+      clashSpark.position.set(0, 0, 0.05);
+
+      swordsGroup.add(sword1, sword2, clashSpark);
+      swordsGroup.visible = false;
+      root.add(swordsGroup);
 
       // 9. Overhead Nameplate + Roblox Speech Bubble Sprite
       const nameCanvas = document.createElement('canvas');
@@ -2355,7 +2437,8 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
             : '';
 
         const isLocalRank1 = rank1PlayerId === currentProps.localPlayerId;
-        const sig = `${currentProps.localPlayerName}|${currentProps.localPlayerClass}|${localMp}|${localScore}|${activeLocalChat}|${isLocalRank1}`;
+        const isLocalDueling = Boolean(currentProps.duelingPlayerIds?.has(currentProps.localPlayerId));
+        const sig = `${currentProps.localPlayerName}|${currentProps.localPlayerClass}|${localMp}|${localScore}|${activeLocalChat}|${isLocalRank1}|${isLocalDueling}`;
         if (localRig.lastSignature !== sig) {
           localRig.lastSignature = sig;
           drawOverheadTag(
@@ -2365,7 +2448,8 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
             '#38bdf8',
             false,
             activeLocalChat,
-            isLocalRank1
+            isLocalRank1,
+            isLocalDueling
           );
           localRig.nameTexture.needsUpdate = true;
         }
@@ -2485,7 +2569,8 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
             : '';
 
         const isPeerRank1 = rank1PlayerId === rp.id;
-        const sig = `${rp.name}|${rp.studentClass}|${rp.score}|${isOnlineHuman}|${activePeerChat}|${isPeerRank1}`;
+        const isPeerDueling = Boolean(currentProps.duelingPlayerIds?.has(rp.id));
+        const sig = `${rp.name}|${rp.studentClass}|${rp.score}|${isOnlineHuman}|${activePeerChat}|${isPeerRank1}|${isPeerDueling}`;
         if (rig.lastSignature !== sig) {
           rig.lastSignature = sig;
           drawOverheadTag(
@@ -2495,13 +2580,14 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
             badgeColor,
             false,
             activePeerChat,
-            isPeerRank1
+            isPeerRank1,
+            isPeerDueling
           );
           rig.nameTexture.needsUpdate = true;
         }
       }
 
-      // Update 3D Golden Crown visibility and spin for all rigs
+      // Update 3D Golden Crown and 3D Clashing Swords animation for all rigs
       for (const [id, rig] of playerRigs.entries()) {
         const isChampion = rank1PlayerId !== null && id === rank1PlayerId;
         const crownObj = rig.group.getObjectByName('crownGroup');
@@ -2509,6 +2595,23 @@ export const CyberArenaCanvas: React.FC<CyberArenaCanvasProps> = ({
           crownObj.visible = isChampion;
           if (isChampion) {
             crownObj.rotation.y = elapsed * 2.5;
+          }
+        }
+
+        const isDueling = Boolean(currentProps.duelingPlayerIds?.has(id));
+        const swordsObj = rig.group.getObjectByName('swordsGroup');
+        if (swordsObj) {
+          swordsObj.visible = isDueling;
+          if (isDueling) {
+            // Animate 3D clashing swords striking together
+            swordsObj.rotation.y = elapsed * 2.2;
+            const clashPulse = Math.sin(elapsed * 14);
+            swordsObj.position.y = 5.0 + Math.abs(clashPulse) * 0.18;
+            const spark = swordsObj.getObjectByName('clashSpark');
+            if (spark) {
+              const sp = 1.0 + Math.abs(Math.sin(elapsed * 28)) * 1.5;
+              spark.scale.set(sp, sp, sp);
+            }
           }
         }
       }
