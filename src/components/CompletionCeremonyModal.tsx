@@ -85,16 +85,16 @@ export const CompletionCeremonyModal: React.FC<CompletionCeremonyModalProps> = (
         {/* Ceremonial Header */}
         <div className="p-4 sm:p-6 bg-gradient-to-r from-amber-600 via-yellow-500 to-amber-600 text-slate-950 font-sans border-b-4 border-amber-300 relative text-center">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-950/20 border border-slate-950/30 text-xs font-mono font-black tracking-wider uppercase mb-1">
-            <Flag className="w-4 h-4 text-amber-950" />
-            <span>UPACARA SELEBRASI TIANG BENDERA MTsN 14</span>
+            <CheckCircle2 className="w-4 h-4 text-emerald-950" />
+            <span>SESI PERMAINAN SELESAI · ARENA TELAH DIBERSIHKAN</span>
           </div>
 
           <h2 className="text-xl sm:text-3xl font-black tracking-tight leading-tight uppercase drop-shadow">
-            🏆 SELAMAT! KAMU TELAH SELESAI CBT!
+            🏆 HASIL AKHIR & PERINGKAT KELAS
           </h2>
 
           <p className="text-xs sm:text-sm font-extrabold text-slate-900/90 max-w-lg mx-auto mt-1">
-            Seluruh {totalQuestions} butir soal telah berhasil kamu jawab. Karakter 3D kamu kini berdiri di depan Tiang Bendera bersama teman sekelas!
+            Permainan telah selesai dan avatar kamu telah otomatis keluar dari arena. Seluruh {totalQuestions} butir soal telah dievaluasi!
           </p>
         </div>
 
@@ -230,24 +230,13 @@ export const CompletionCeremonyModal: React.FC<CompletionCeremonyModalProps> = (
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
             <button
               onClick={() => {
-                soundEngine.playClick();
-                onClose();
-              }}
-              className="py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-extrabold text-xs flex items-center justify-center gap-1.5 border border-slate-700 transition-colors"
-            >
-              <Flag className="w-3.5 h-3.5 text-amber-400" />
-              <span>Selebrasi 3D</span>
-            </button>
-
-            <button
-              onClick={() => {
                 soundEngine.playVictoryFanfare();
                 onOpenAnalysis();
               }}
-              className="py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs flex items-center justify-center gap-1.5 shadow transition-colors"
+              className="py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs flex items-center justify-center gap-1.5 shadow transition-colors order-2 sm:order-1"
             >
               <BarChart3 className="w-3.5 h-3.5" />
-              <span>Analisis Soal</span>
+              <span>Analisis & Pembahasan</span>
             </button>
 
             <button
@@ -256,10 +245,21 @@ export const CompletionCeremonyModal: React.FC<CompletionCeremonyModalProps> = (
                 if (onResetAndLeave) onResetAndLeave();
                 else onClose();
               }}
-              className="py-2.5 px-3 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs flex items-center justify-center gap-1.5 shadow-lg transition-colors"
+              className="py-2.5 px-3 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs flex items-center justify-center gap-1.5 shadow-lg transition-colors order-1 sm:order-2"
             >
               <LogOut className="w-3.5 h-3.5" />
               <span>Keluar & Mulai Ulang</span>
+            </button>
+
+            <button
+              onClick={() => {
+                soundEngine.playClick();
+                onClose();
+              }}
+              className="py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-extrabold text-xs flex items-center justify-center gap-1.5 border border-slate-700 transition-colors order-3"
+            >
+              <Users className="w-3.5 h-3.5 text-amber-400" />
+              <span>Tutup Menu Peringkat</span>
             </button>
           </div>
         </div>
