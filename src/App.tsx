@@ -1617,7 +1617,7 @@ export default function App() {
     }
     setIsTeacherUnlocked(true);
     setAuthError(null);
-    const cleanPin = normalizePin(teacherRoomCode);
+    const cleanPin = normalizePin(teacherRoomCode) || 'MTN14';
     const uniqueId = makePlayerIdForWindow('azhary');
     localPlayerIdRef.current = uniqueId;
     const spawn = getInitialSpawnForPlayer(uniqueId);
@@ -1674,7 +1674,7 @@ export default function App() {
 
   const handleLaunchAreaRoom = async (data: CreateAreaRoomData) => {
     setIsCreateAreaRoomModalOpen(false);
-    const cleanPin = normalizePin(data.pin);
+    const cleanPin = normalizePin(data.pin) || `HALIM${Math.floor(10 + Math.random() * 90)}`;
     setTeacherRoomCode(cleanPin);
     setActivePin(cleanPin);
     setRoomDurationMinutes(data.durationMinutes);

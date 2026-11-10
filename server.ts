@@ -1179,7 +1179,7 @@ async function startServer() {
 
     const targetPin = normalizeRoomPin(
       rawPin || `14${Math.floor(100 + Math.random() * 900)}`
-    );
+    ) || `MTN${Math.floor(10 + Math.random() * 90)}`;
     const duration =
       typeof durationMinutes === 'number' && durationMinutes > 0 ? durationMinutes : 0;
     const now = Date.now();
@@ -1309,7 +1309,7 @@ async function startServer() {
       return;
     }
 
-    const pin = normalizeRoomPin(rawPin);
+    const pin = normalizeRoomPin(rawPin) || arenaPin || 'MTN14';
     const room = getOrCreateRoom(pin);
 
     // Siswa dilarang masuk ke room yang permainannya sudah selesai
@@ -1703,7 +1703,7 @@ async function startServer() {
         const { type, payload } = msg;
 
         if (type === 'room:create' || type === 'room:join') {
-          const pin = normalizeRoomPin(payload.pin);
+          const pin = normalizeRoomPin(payload.pin) || arenaPin || 'MTN14';
           const room = getOrCreateRoom(pin);
 
           // Siswa dilarang masuk ke room yang sudah selesai
