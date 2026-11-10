@@ -177,7 +177,6 @@ export interface AreaRoomState {
   gameStartTime: number | null;
   gameEndTime: number | null;
   createdAt: number;
-  finalPlayers?: ClassMapPlayer[];
 }
 
 const roomsMap = new Map<string, AreaRoomState>();
@@ -520,10 +519,6 @@ function serializeArena(requestedPin?: string) {
   for (const [id, p] of arenaPlayers.entries()) {
     const pPin = normalizeRoomPin(p.roomPin || arenaPin);
     if (p.isRoamingPeer || pPin === pin) {
-      // Otomatis bersihkan/sembunyikan avatar siswa jika room telah selesai
-      if (room.status === 'FINISHED' && p.role === 'STUDENT' && !p.isRoamingPeer) {
-        continue;
-      }
       if (p.isRoamingPeer || now - p.lastUpdated < 45000) {
         activePlayers.push(p);
       } else {
@@ -559,7 +554,6 @@ function serializeArena(requestedPin?: string) {
     currentQuestionIndex: 0,
     totalQuestions: qs.length,
     players: activePlayers,
-    finalLeaderboard: room.finalPlayers || [],
     answers: roomAnswers.slice(-200),
     chatMessages: roomChats.slice(-50),
     versusMatches: roomVersus,
@@ -852,78 +846,8 @@ async function startServer() {
         publishToCloudBridge('versus:update', payload.payload);
       } else if (payload.type === 'room:activities_reset') {
         publishToCloudBridge('room:activities_reset', payload.payload);
-      } else if (payload.type === 'room:game_finished') {
-        publishToCloudBridge('room:game_finished', payload.payload);
-      } else if (payload.type === 'room:state') {
-        publishToCloudBridge('room:state', payload.payload);
       }
     }
-  }
-
-  // Centrally finish a room and completely clean all student avatars from the arena
-  function finishRoomAndCleanArena(targetPin: string, finishMessage: string) {
-    const pin = normalizeRoomPin(targetPin || arenaPin);
-    const room = getOrCreateRoom(pin);
-    room.status = 'FINISHED';
-    if (pin === arenaPin) {
-      arenaStatus = 'FINISHED';
-    }
-
-    // 1. Snapshot student players in this room for the final leaderboard
-    const studentSnapshot: ClassMapPlayer[] = [];
-    for (const [id, p] of arenaPlayers.entries()) {
-      const pPin = normalizeRoomPin(p.roomPin || arenaPin);
-      if (!p.isRoamingPeer && pPin === pin && p.role === 'STUDENT') {
-        studentSnapshot.push({ ...p });
-      }
-    }
-    studentSnapshot.sort((a, b) => (b.score || 0) - (a.score || 0));
-    room.finalPlayers = studentSnapshot;
-
-    // 2. Clean Arena: Delete every student avatar belonging to this room from arenaPlayers
-    for (const student of studentSnapshot) {
-      arenaPlayers.delete(student.id);
-      broadcastToArena(
-        {
-          type: 'player:left',
-          payload: {
-            playerId: student.id,
-            name: student.name,
-            reason: 'game_finished',
-          },
-        },
-        pin
-      );
-    }
-
-    // 3. Clear active versus matches for this room
-    for (const [mId, match] of arenaVersusMatches.entries()) {
-      if (!match.pin || normalizeRoomPin(match.pin) === pin) {
-        arenaVersusMatches.delete(mId);
-      }
-    }
-
-    schedulePersistStateToDisk();
-
-    // 4. Serialize arena state (which now contains 0 student players)
-    const serialized = serializeArena(pin);
-
-    // 5. Broadcast game finished with the final leaderboard snapshot
-    broadcastToArena(
-      {
-        type: 'room:game_finished',
-        payload: {
-          pin,
-          message: finishMessage,
-          room: serialized,
-          finalLeaderboard: room.finalPlayers || [],
-        },
-      },
-      pin
-    );
-    broadcastToArena({ type: 'room:state', payload: serialized }, pin);
-
-    return serialized;
   }
 
   function createVersusChallenge(
@@ -1145,14 +1069,29 @@ async function startServer() {
     }
 
     const targetPin = normalizeRoomPin(rawPin || arenaPin);
-    const serialized = finishRoomAndCleanArena(
-      targetPin,
-      'Guru telah menyelesaikan permainan secara serentak.'
+    const room = getOrCreateRoom(targetPin);
+    room.status = 'FINISHED';
+
+    schedulePersistStateToDisk();
+    const serialized = serializeArena(targetPin);
+
+    // Broadcast both room:game_finished and room:state to that room
+    broadcastToArena(
+      {
+        type: 'room:game_finished',
+        payload: {
+          pin: targetPin,
+          message: 'Guru telah menyelesaikan permainan secara serentak.',
+          room: serialized,
+        },
+      },
+      targetPin
     );
+    broadcastToArena({ type: 'room:state', payload: serialized }, targetPin);
 
     res.json({
       ok: true,
-      message: `Permainan di Room ${targetPin} berhasil diselesaikan secara serentak. Arena telah dibersihkan.`,
+      message: `Permainan di Room ${targetPin} berhasil diselesaikan secara serentak.`,
       room: serialized,
     });
   });
@@ -1179,7 +1118,7 @@ async function startServer() {
 
     const targetPin = normalizeRoomPin(
       rawPin || `14${Math.floor(100 + Math.random() * 900)}`
-    ) || `MTN${Math.floor(10 + Math.random() * 90)}`;
+    );
     const duration =
       typeof durationMinutes === 'number' && durationMinutes > 0 ? durationMinutes : 0;
     const now = Date.now();
@@ -1309,28 +1248,13 @@ async function startServer() {
       return;
     }
 
-    const pin = normalizeRoomPin(rawPin) || arenaPin || 'MTN14';
-    const room = getOrCreateRoom(pin);
-
-    // Siswa dilarang masuk ke room yang permainannya sudah selesai
-    if (role === 'STUDENT' && room.status === 'FINISHED') {
-      res.status(403).json({
-        error: 'Permainan pada Room ini sudah selesai. Silakan gunakan Token Room baru dari Guru untuk memulai permainan baru.',
-      });
-      return;
-    }
-
+    const pin = normalizeRoomPin(rawPin);
     arenaPin = pin;
-    if (role === 'TEACHER') {
-      if (categoryFilter) {
-        arenaCategoryFilter = categoryFilter;
-      }
-      if (room.status === 'FINISHED') {
-        room.status = 'PLAYING';
-      }
-      if (arenaStatus === 'FINISHED') {
-        arenaStatus = 'PLAYING';
-      }
+    if (role === 'TEACHER' && categoryFilter) {
+      arenaCategoryFilter = categoryFilter;
+    }
+    if (arenaStatus === 'FINISHED') {
+      arenaStatus = 'PLAYING';
     }
 
     const player = upsertPlayerInArena({
@@ -1687,10 +1611,22 @@ async function startServer() {
     for (const [pin, room] of roomsMap.entries()) {
       if (room.status === 'PLAYING' && room.durationMinutes > 0 && room.gameEndTime) {
         if (now >= room.gameEndTime) {
-          finishRoomAndCleanArena(
-            pin,
-            'Waktu ujian/permainan telah habis! Permainan diselesaikan secara serentak.'
+          room.status = 'FINISHED';
+          schedulePersistStateToDisk();
+          const serialized = serializeArena(pin);
+          broadcastToArena(
+            {
+              type: 'room:game_finished',
+              payload: {
+                pin,
+                message:
+                  'Waktu ujian/permainan telah habis! Permainan diselesaikan secara serentak.',
+                room: serialized,
+              },
+            },
+            pin
           );
+          broadcastToArena({ type: 'room:state', payload: serialized }, pin);
         }
       }
     }
@@ -1703,36 +1639,16 @@ async function startServer() {
         const { type, payload } = msg;
 
         if (type === 'room:create' || type === 'room:join') {
-          const pin = normalizeRoomPin(payload.pin) || arenaPin || 'MTN14';
-          const room = getOrCreateRoom(pin);
-
-          // Siswa dilarang masuk ke room yang sudah selesai
-          if (payload.role === 'STUDENT' && room.status === 'FINISHED') {
-            ws.send(
-              JSON.stringify({
-                type: 'error',
-                payload: {
-                  code: 'ROOM_FINISHED',
-                  message:
-                    'Permainan pada Room ini sudah selesai. Silakan gunakan Token Room baru dari Guru untuk memulai permainan baru.',
-                },
-              })
-            );
-            return;
-          }
-
+          const pin = normalizeRoomPin(payload.pin);
           arenaPin = pin;
 
           if (type === 'room:create' || payload.role === 'TEACHER') {
             if (payload.categoryFilter) {
               arenaCategoryFilter = payload.categoryFilter;
             }
-            if (room.status === 'FINISHED') {
-              room.status = 'PLAYING';
-            }
-            if (arenaStatus === 'FINISHED') {
-              arenaStatus = 'PLAYING';
-            }
+          }
+          if (arenaStatus === 'FINISHED') {
+            arenaStatus = 'PLAYING';
           }
 
           const player = upsertPlayerInArena({
@@ -1924,10 +1840,22 @@ async function startServer() {
           }
         } else if (type === 'room:finish_game') {
           const targetPin = normalizeRoomPin(payload?.pin || clientPlayerMap.get(ws)?.pin || arenaPin);
-          finishRoomAndCleanArena(
-            targetPin,
-            'Guru telah menyelesaikan permainan secara serentak.'
+          const room = getOrCreateRoom(targetPin);
+          room.status = 'FINISHED';
+          schedulePersistStateToDisk();
+          const serialized = serializeArena(targetPin);
+          broadcastToArena(
+            {
+              type: 'room:game_finished',
+              payload: {
+                pin: targetPin,
+                message: 'Guru telah menyelesaikan permainan secara serentak.',
+                room: serialized,
+              },
+            },
+            targetPin
           );
+          broadcastToArena({ type: 'room:state', payload: serialized }, targetPin);
         } else if (type === 'room:create_area') {
           const targetPin = normalizeRoomPin(
             payload?.pin || `14${Math.floor(100 + Math.random() * 900)}`

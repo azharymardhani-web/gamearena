@@ -448,7 +448,6 @@ export default function App() {
   const [isAnalysisPreviewOpen, setIsAnalysisPreviewOpen] = useState<boolean>(false);
   const [isCompletionCeremonyOpen, setIsCompletionCeremonyOpen] = useState<boolean>(false);
   const [hasShownCompletionCeremony, setHasShownCompletionCeremony] = useState<boolean>(false);
-  const [finalCeremonyPlayers, setFinalCeremonyPlayers] = useState<MapPlayerEntity[]>([]);
   const [isGuideModalOpen, setIsGuideModalOpen] = useState<boolean>(false);
   const [isMuted, setIsMuted] = useState<boolean>(false);
   const initialTabPlayerId = useMemo(
@@ -1021,29 +1020,16 @@ export default function App() {
       } else if (pkt.type === 'room:status' && pkt.payload?.status) {
         setRoomStatus(pkt.payload.status);
       } else if (pkt.type === 'room:game_finished') {
-        const finalRankList =
-          ((pkt.payload?.finalLeaderboard ||
-            pkt.payload?.room?.finalLeaderboard ||
-            classPlayers) as MapPlayerEntity[]) || [];
-        setFinalCeremonyPlayers(finalRankList);
         setRoomStatus('FINISHED');
         soundEngine.playVictoryFanfare();
         setActiveTeacherModalIndex(null);
         setActiveBuildingInterior(null);
-        setOpenVersusModalMatchId(null);
         if (playerMetaRef.current.localRole === 'STUDENT') {
-          // Avatar siswa otomatis keluar dari arena dan arena dibersihkan
-          setJoinedRoom(false);
-          setClassPlayers([]);
-          try {
-            sessionStorage.removeItem(TAB_SESSION_STORAGE_KEY);
-            sessionStorage.removeItem(RELOAD_TICKET_KEY);
-          } catch {}
-          setRoomCodeInput('');
           setIsCompletionCeremonyOpen(true);
+          latestPosRef.current.x = 1200;
+          latestPosRef.current.y = 480;
+          setTeleportCommand({ x: 1200, y: 480, seq: Date.now() });
         } else {
-          // Arena guru bersih dari seluruh avatar siswa
-          setClassPlayers((prev) => prev.filter((p) => p.role === 'TEACHER'));
           setIsAnalysisPreviewOpen(true);
         }
       } else if (pkt.type === 'room:config' && pkt.payload) {
@@ -1130,22 +1116,13 @@ export default function App() {
               setRoomName(room.roomName);
             }
             if (room.status === 'FINISHED' && playerMetaRef.current.localRole === 'STUDENT') {
-              const finalRankList =
-                ((room.finalLeaderboard || classPlayers) as MapPlayerEntity[]) || [];
-              setFinalCeremonyPlayers(finalRankList);
               soundEngine.playVictoryFanfare();
-              setJoinedRoom(false);
-              setClassPlayers([]);
-              try {
-                sessionStorage.removeItem(TAB_SESSION_STORAGE_KEY);
-                sessionStorage.removeItem(RELOAD_TICKET_KEY);
-              } catch {}
-              setRoomCodeInput('');
+              setIsCompletionCeremonyOpen(true);
               setActiveTeacherModalIndex(null);
               setActiveBuildingInterior(null);
-              setOpenVersusModalMatchId(null);
-              setIsCompletionCeremonyOpen(true);
-              return;
+              latestPosRef.current.x = 1200;
+              latestPosRef.current.y = 480;
+              setTeleportCommand({ x: 1200, y: 480, seq: Date.now() });
             }
             setSelectedCategory(room.categoryFilter || 'Semua Materi');
             if (Array.isArray(room.enabledQuestionIds)) {
@@ -1202,22 +1179,6 @@ export default function App() {
               }
               return room.status;
             });
-            if (room.status === 'FINISHED' && playerMetaRef.current.localRole === 'STUDENT' && joinedRoom) {
-              const finalRankList =
-                ((room.finalLeaderboard || classPlayers) as MapPlayerEntity[]) || [];
-              setFinalCeremonyPlayers(finalRankList);
-              setJoinedRoom(false);
-              setClassPlayers([]);
-              try {
-                sessionStorage.removeItem(TAB_SESSION_STORAGE_KEY);
-                sessionStorage.removeItem(RELOAD_TICKET_KEY);
-              } catch {}
-              setRoomCodeInput('');
-              setActiveTeacherModalIndex(null);
-              setActiveBuildingInterior(null);
-              setOpenVersusModalMatchId(null);
-              setIsCompletionCeremonyOpen(true);
-            }
             setSelectedCategory(room.categoryFilter || 'Semua Materi');
             if (Array.isArray(room.enabledQuestionIds)) {
               setEnabledQuestionIds(room.enabledQuestionIds);
@@ -1237,29 +1198,16 @@ export default function App() {
               setVersusMatches(room.versusMatches);
             }
           } else if (msg.type === 'room:game_finished') {
-            const finalRankList =
-              ((msg.payload?.finalLeaderboard ||
-                msg.payload?.room?.finalLeaderboard ||
-                classPlayers) as MapPlayerEntity[]) || [];
-            setFinalCeremonyPlayers(finalRankList);
             setRoomStatus('FINISHED');
             soundEngine.playVictoryFanfare();
             setActiveTeacherModalIndex(null);
             setActiveBuildingInterior(null);
-            setOpenVersusModalMatchId(null);
             if (playerMetaRef.current.localRole === 'STUDENT') {
-              // Avatar siswa otomatis keluar dari arena dan arena dibersihkan
-              setJoinedRoom(false);
-              setClassPlayers([]);
-              try {
-                sessionStorage.removeItem(TAB_SESSION_STORAGE_KEY);
-                sessionStorage.removeItem(RELOAD_TICKET_KEY);
-              } catch {}
-              setRoomCodeInput('');
               setIsCompletionCeremonyOpen(true);
+              latestPosRef.current.x = 1200;
+              latestPosRef.current.y = 480;
+              setTeleportCommand({ x: 1200, y: 480, seq: Date.now() });
             } else {
-              // Arena guru bersih dari seluruh avatar siswa
-              setClassPlayers((prev) => prev.filter((p) => p.role === 'TEACHER'));
               setIsAnalysisPreviewOpen(true);
             }
           } else if (msg.type === 'player:moved') {
@@ -1458,61 +1406,44 @@ export default function App() {
           answeredQuestionIds: Array.from(answeredQuestionIds),
         }),
       });
-      if (!res.ok) {
-        const errData = await res.json().catch(() => null);
-        const errMsg =
-          errData?.error ||
-          errData?.message ||
-          'Gagal masuk ke room. Silakan periksa kembali Token Room.';
-        setAuthError(errMsg);
-        soundEngine.playWrongAnswer();
-        setJoinedRoom(false);
-        return;
-      }
-      const data = await res.json();
-      if (data?.room) {
-        if (role === 'STUDENT' && data.room.status === 'FINISHED') {
-          setAuthError(
-            'Permainan pada Room ini sudah selesai. Silakan gunakan Token Room baru dari Guru.'
-          );
-          soundEngine.playWrongAnswer();
-          setJoinedRoom(false);
-          return;
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.room) {
+          setClassPlayers(data.room.players || []);
+          setSessionAnswers(data.room.answers || []);
+          setRoomStatus(data.room.status || 'PLAYING');
+          setSelectedCategory(data.room.categoryFilter || 'Semua Materi');
+          if (typeof data.room.durationMinutes === 'number') {
+            setRoomDurationMinutes(data.room.durationMinutes);
+          }
+          if (typeof data.room.gameEndTime === 'number') {
+            setRoomGameEndTime(data.room.gameEndTime);
+          }
+          if (typeof data.room.areaZone === 'string') {
+            setRoomAreaZone(data.room.areaZone);
+          }
+          if (typeof data.room.roomName === 'string') {
+            setRoomName(data.room.roomName);
+          }
+          if (Array.isArray(data.room.chatMessages)) {
+            setChatMessages(data.room.chatMessages);
+          }
+          if (Array.isArray(data.room.versusMatches)) {
+            setVersusMatches(data.room.versusMatches);
+          }
         }
-        setClassPlayers(data.room.players || []);
-        setSessionAnswers(data.room.answers || []);
-        setRoomStatus(data.room.status || 'PLAYING');
-        setSelectedCategory(data.room.categoryFilter || 'Semua Materi');
-        if (typeof data.room.durationMinutes === 'number') {
-          setRoomDurationMinutes(data.room.durationMinutes);
+        if (data?.player) {
+          applyRestoredServerPlayer(data.player);
         }
-        if (typeof data.room.gameEndTime === 'number') {
-          setRoomGameEndTime(data.room.gameEndTime);
+        if (typeof data?.spawnX === 'number' && typeof data?.spawnY === 'number') {
+          latestPosRef.current.x = data.spawnX;
+          latestPosRef.current.y = data.spawnY;
+          setTeleportCommand({
+            x: data.spawnX,
+            y: data.spawnY,
+            seq: Date.now(),
+          });
         }
-        if (typeof data.room.areaZone === 'string') {
-          setRoomAreaZone(data.room.areaZone);
-        }
-        if (typeof data.room.roomName === 'string') {
-          setRoomName(data.room.roomName);
-        }
-        if (Array.isArray(data.room.chatMessages)) {
-          setChatMessages(data.room.chatMessages);
-        }
-        if (Array.isArray(data.room.versusMatches)) {
-          setVersusMatches(data.room.versusMatches);
-        }
-      }
-      if (data?.player) {
-        applyRestoredServerPlayer(data.player);
-      }
-      if (typeof data?.spawnX === 'number' && typeof data?.spawnY === 'number') {
-        latestPosRef.current.x = data.spawnX;
-        latestPosRef.current.y = data.spawnY;
-        setTeleportCommand({
-          x: data.spawnX,
-          y: data.spawnY,
-          seq: Date.now(),
-        });
       }
     } catch {
       // Fallback to WS if HTTP is busy
@@ -1617,7 +1548,7 @@ export default function App() {
     }
     setIsTeacherUnlocked(true);
     setAuthError(null);
-    const cleanPin = normalizePin(teacherRoomCode) || 'MTN14';
+    const cleanPin = normalizePin(teacherRoomCode);
     const uniqueId = makePlayerIdForWindow('azhary');
     localPlayerIdRef.current = uniqueId;
     const spawn = getInitialSpawnForPlayer(uniqueId);
@@ -1667,14 +1598,12 @@ export default function App() {
     cloudBridgeRef.current?.publish('room:game_finished', { pin: activePin });
     setRoomStatus('FINISHED');
     soundEngine.playVictoryFanfare();
-    // Bersihkan seluruh avatar siswa di arena guru
-    setClassPlayers((prev) => prev.filter((p) => p.role === 'TEACHER'));
     setIsAnalysisPreviewOpen(true);
   };
 
   const handleLaunchAreaRoom = async (data: CreateAreaRoomData) => {
     setIsCreateAreaRoomModalOpen(false);
-    const cleanPin = normalizePin(data.pin) || `HALIM${Math.floor(10 + Math.random() * 90)}`;
+    const cleanPin = normalizePin(data.pin);
     setTeacherRoomCode(cleanPin);
     setActivePin(cleanPin);
     setRoomDurationMinutes(data.durationMinutes);
@@ -4277,10 +4206,7 @@ export default function App() {
          ==================================================================== */}
       <CompletionCeremonyModal
         isOpen={isCompletionCeremonyOpen}
-        onClose={() => {
-          setIsCompletionCeremonyOpen(false);
-          handleResetSavedSession();
-        }}
+        onClose={() => setIsCompletionCeremonyOpen(false)}
         onOpenAnalysis={() => {
           setIsCompletionCeremonyOpen(false);
           if (localRole === 'TEACHER' || isTeacherUnlocked || isCbtCompleted) {
@@ -4291,7 +4217,7 @@ export default function App() {
           setIsCompletionCeremonyOpen(false);
           handleResetSavedSession();
         }}
-        players={finalCeremonyPlayers.length > 0 ? finalCeremonyPlayers : classPlayers}
+        players={classPlayers}
         localPlayerId={localPlayerIdRef.current}
         localPlayerName={studentName || 'Siswa MTsN 14'}
         localPlayerClass={studentClass || 'Kelas 7'}
